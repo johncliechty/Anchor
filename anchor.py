@@ -2,7 +2,7 @@
 # Wave 14: acceptance tests added
 # Wave 15: trust ceremony added
 """
-Anchor — Productivity Engine for J.C. Liechty
+Anchor — Productivity Engine
 Reads/writes markdown files, generates dashboard.html, logs changes.
 
 Usage:

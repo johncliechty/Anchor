@@ -842,7 +842,7 @@ def build_scrubbed_stranger_zip(
         if include_author_secrets:
             zf.writestr(
                 "skills/leak/notes.md",
-                "Host C:\\Users\\john\\secret token=a9F3kZ2pQ7wL5mN8xR1tY6vB4cD0eH2j\n",
+                "Host C:\\Users\\example\\secret token=a9F3kZ2pQ7wL5mN8xR1tY6vB4cD0eH2j\n",
             )
     return dest_zip
 

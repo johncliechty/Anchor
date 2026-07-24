@@ -39,7 +39,7 @@
     "lean": {
       "class": "deterministic",
       "role": "F2-lean-kernel",
-      "path": "C:\\Users\\john\\.elan\\bin\\lean.exe",
+      "path": "<path>\\lean.exe",
       "version": "4.31.0",
       "version_args": ["--version"],
       "note": "Core Lean only; mathlib (multi-GB) FLAGGED follow-on. Verified 1+1=2 := rfl -> exit 0, 1+1=3 := rfl -> exit 1."
@@ -47,7 +47,7 @@
     "lake": {
       "class": "deterministic",
       "role": "F2-lean-build",
-      "path": "C:\\Users\\john\\.elan\\bin\\lake.exe",
+      "path": "<path>\\lake.exe",
       "version": "4.31.0",
       "version_args": ["--version"],
       "note": "Lean build driver; pinned for completeness. Core Lean only (no mathlib this increment)."
@@ -55,7 +55,7 @@
     "z3": {
       "class": "deterministic",
       "role": "F3-smt",
-      "path": "C:\\Users\\john\\AppData\\Roaming\\Python\\bin\\z3.exe",
+      "path": "<path>\\z3.exe",
       "version": "4.16.0",
       "version_args": ["--version"],
       "note": "Used ONLY within z3-DECIDABLE theories (LIA/LRA/BV); quantified number-theory/analysis is out of scope this increment (fail-CLOSED on unknown). Verified sat/unsat."
@@ -65,7 +65,7 @@
       "role": "F1-cross-family-FALLBACK",
       "tier": "fallback",
       "rung": "PLAUSIBILITY-CORROBORATED",
-      "path": "C:\\Users\\john\\AppData\\Local\\Programs\\Ollama\\ollama.exe",
+      "path": "<path>\\ollama.exe",
       "version_args": ["--version"],
       "note": "Cross-family FALLBACK (non-Claude) verifier panel, used when the Gemini PRIMARY is quarantined (key-missing / 401|403 / 429 / unreachable). A weaker soft-check tier => PLAUSIBILITY-CORROBORATED (NOT a proof oracle). A SINGLE cold generation measured >200s on this host, so a persistent server + a paid-once warm-up is REQUIRED; per-call model reload is forbidden. The bare `ollama run` default is NOT temp 0 — deterministic decoding is pinned below.",
       "server": {

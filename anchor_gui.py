@@ -6725,7 +6725,7 @@ def generate_html(projects, tasks, inbox):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Anchor Dashboard — J.C. Liechty</title>
+<title>Anchor Dashboard</title>
 <link rel="icon" href="/vendor/brand/gwl-m-icon.svg?v={BUILD_ID}" type="image/svg+xml">
 <link rel="icon" href="/anchor.ico?v=2026-05-11" type="image/x-icon">
 <link rel="icon" href="/anchor.png?v=2026-05-11" type="image/png" sizes="256x256">
@@ -7314,7 +7314,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
     </div>
     <div class="gwl-badge">Powered by NextGen Nuclear <svg class="gwl-rad" width="12" height="12" viewBox="0 0 24 24" style="vertical-align:middle" role="img" aria-label="radiation"><circle cx="12" cy="12" r="2.6" fill="#22c55e"/><path fill="#22c55e" d="M13.6 14.77L17.5 21.53A11 11 0 0 1 6.5 21.53L10.4 14.77A3.2 3.2 0 0 0 13.6 14.77ZM8.8 12L1 12A11 11 0 0 1 6.5 2.47L10.4 9.23A3.2 3.2 0 0 0 8.8 12ZM13.6 9.23L17.5 2.47A11 11 0 0 1 23 12L15.2 12A3.2 3.2 0 0 0 13.6 9.23Z"/></svg></div>
     <h1><span>&#9875;</span> Anchor</h1>
-    <div class="subtitle">J.C. Liechty — Life Dashboard</div>
+    <div class="subtitle">Life Dashboard</div>
     <div class="nav-section">
       <h3>Views</h3>
       <div class="nav-item active" data-view="dashboard" onclick="showView('dashboard')">

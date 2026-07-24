@@ -1,0 +1,6 @@
+{
+  "name": "gandalf-test-suite-entry",
+  "private": true,
+  "description": "Routes `node --test test/` (which Node v26 spawns as a single entry) to index.mjs, the runner shim that executes every *.test.mjs with per-file process isolation.",
+  "main": "index.mjs"
+}
