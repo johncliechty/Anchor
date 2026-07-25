@@ -1,4 +1,4 @@
-**Version: 1.0.2**
+**Version: 1.0.3**
 
 # Install guide — Shareable skills + Anchor (Package A / B)
 
@@ -24,7 +24,7 @@ git clone https://github.com/johncliechty/Anchor.git
 cd Anchor
 ```
 
-Confirm you have **1.0.2+** (`type VERSION`). Older tips had Package B bugs.
+Confirm you have **1.0.3+** (`type VERSION`). Older tips had Package B bugs.
 
 (If you were given a zip instead of git: unzip, then `cd` into the package root.)
 
@@ -43,7 +43,7 @@ powershell -File .\onboard.ps1
 ```
 
 **Home directory prompt:** default is **`C:\dev`**. Press Enter, or type another **real** folder.  
-**Never** type the placeholder text `<path>` (broken in pre-1.0.2 packages).
+**Never** type the placeholder text `<path>` (broken in pre-1.0.3 packages).
 
 **What this does for you:**
 

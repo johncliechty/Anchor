@@ -1,16 +1,16 @@
-# Collaborator email — Anchor 1.0.2 (Windows + Mac)
+# Collaborator email — Anchor 1.0.3 (Windows + Mac)
 
 Copy/paste ready. This is the **field-tested** install path after Package B failures on a stranger Windows machine (home placeholder, broken `anchor_gui.py`, missing modules).
 
 ---
 
-**Subject:** Anchor 1.0 — install (Windows & Mac) — use **v1.0.2**
+**Subject:** Anchor 1.0 — install (Windows & Mac) — use **v1.0.3**
 
 ---
 
 Hi —
 
-Anchor **version 1.0** is ready (public tag **`v1.0.2`** — please use this tip, not an older clone).  
+Anchor **version 1.0** is ready (public tag **`v1.0.3`** — please use this tip, not an older clone).  
 One repo = product + skills. Works on **Windows** and **Mac**.
 
 If you already cloned earlier, update first:
@@ -18,7 +18,7 @@ If you already cloned earlier, update first:
 ```text
 cd Anchor
 git pull
-git checkout v1.0.2
+git checkout v1.0.3
 ```
 
 (or re-clone fresh below).
@@ -97,7 +97,7 @@ Skills ship **inside** the repo under `vendor/bundled-skills/` — no second clo
 
 ## If something still fails
 
-1. Confirm version: open `VERSION` in the clone — must say **`1.0.2`**.  
+1. Confirm version: open `VERSION` in the clone — must say **`1.0.3`**.  
 2. `git pull` / re-clone if older.  
 3. Send the last screen of `.\onboard.cmd` (or `./onboard.sh`) plus OS + Python version.
 

@@ -1,15 +1,32 @@
-# Anchor 1.0.2
+# Anchor 1.0.3
 
 **Public collaborator release** — all rights reserved (not open source).
 
-Hotfix over **1.0.1** so Package B actually works on a stranger Windows machine.
+Patch over **1.0.2** after end-to-end verification.
 
-## What 1.0.2 fixes (collaborator field report)
+## Fixes in 1.0.2 (still included)
 
-1. **Windows home default** was the literal placeholder `<path>` → now **`C:\dev`**
-2. **`anchor_gui.py` line-ending corruption** (extra CR bytes) → clean file that Python can compile
-3. **Missing modules** required to start the dashboard (`supervisor`, `anchor_settings`, foundry/usage helpers, …) → included
-4. **Seat probe** treated “Claude on PATH” as failure without live probes → PATH presence is enough for readiness (live probe still opt-in)
+1. Windows home default **`C:\dev`** (was broken literal `<path>`)
+2. Clean `anchor_gui.py` line endings + missing dashboard modules
+3. `anchor.ico` branded desktop shortcut
+4. Seat probe: CLI on PATH is enough for readiness
+
+## Fixes in 1.0.3
+
+5. **`onboard.sh` LF-only** line endings (CRLF breaks macOS/Linux bash with `$'\r': command not found`)
+6. `.gitattributes` pins `*.sh` / `onboard.sh` to `eol=lf`
+
+## E2E verification (2026-07-25)
+
+Verified on fresh public clone:
+
+- Root Python modules compile; no double-CR corruption
+- Skills install: 13 portfolio dirs from `vendor/bundled-skills`
+- Windows: branded `.lnk`, detached dashboard start, HTTP probe `:8777` OK, dual gate **B_ready**
+- macOS path (simulated): dual gate B_ready on probe, `.command` launcher written, `onboard.sh` bash syntax OK, Posix PTY backend present
+- Seat probe: Claude on PATH → ok without `ANCHOR_SHARE_LIVE_PROBES`
+
+Not run on physical Apple hardware in this session; Mac cold-start is validated at script/gate/launcher level.
 
 ## Cold start
 
@@ -23,9 +40,6 @@ cd Anchor
 .\onboard.cmd
 ```
 
-At the home prompt, accept the default **`C:\dev`** (or type another real folder).  
-Do **not** enter the text `<path>`.
-
 ### macOS / Linux
 
 ```text
@@ -37,8 +51,4 @@ chmod +x ./onboard.sh
 ./onboard.sh
 ```
 
-## Collaborator email
-
-See `COLLABORATOR-EMAIL.md`.
-
-Tag: **`v1.0.2`**.
+Tag: **`v1.0.3`**. See `COLLABORATOR-EMAIL.md`.
