@@ -1,4 +1,4 @@
-**Version: 1.0.1**
+**Version: 1.0.2**
 
 # Install guide — Shareable skills + Anchor (Package A / B)
 
@@ -24,6 +24,8 @@ git clone https://github.com/johncliechty/Anchor.git
 cd Anchor
 ```
 
+Confirm you have **1.0.2+** (`type VERSION`). Older tips had Package B bugs.
+
 (If you were given a zip instead of git: unzip, then `cd` into the package root.)
 
 ### 3. Run onboard (one command)
@@ -40,15 +42,18 @@ Or:
 powershell -File .\onboard.ps1
 ```
 
+**Home directory prompt:** default is **`C:\dev`**. Press Enter, or type another **real** folder.  
+**Never** type the placeholder text `<path>` (broken in pre-1.0.2 packages).
+
 **What this does for you:**
 
 1. Checks for **Python 3.8+**. If missing, tries **winget** to install it (Windows). If that fails, it points you at python.org and asks you to re-run.
 2. Starts the **interactive** install dialogue — same as `python -m share_onboard`.
-3. Asks/confirm **where** to put things (home; often under `C:\dev`).
+3. Asks/confirm **where** to put things (home; default `C:\dev`).
 4. Installs **skills** and registers them for your agent hosts (Claude pointer, Grok paths, etc.).
-5. Probes **Claude / Gemini(agy) / Grok** subscription CLIs (at least one coding seat should be present to stamp ready).
+5. Probes **Claude / Gemini(agy) / Grok** on PATH (PATH presence is enough for readiness; live session probe is optional via env).
 6. Optional **feedback** — **default is No**.
-7. **Package B only:** starts the Anchor **service** if needed, HTTP-probes the local dashboard, places an **Anchor** icon on the desktop (with **anchor.ico**). Dashboard **favicon** ships with the product for the browser tab.
+7. **Package B only:** starts the Anchor dashboard process if needed, HTTP-probes the local dashboard, places an **Anchor** icon on the desktop (with **anchor.ico**).
 
 You do **not** need to pre-install Python by hand when winget works.  
 You do **not** use silent/`--non-interactive` for a real ready install (that path never stamps ready).

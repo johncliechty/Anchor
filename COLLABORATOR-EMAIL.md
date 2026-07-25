@@ -1,20 +1,36 @@
-# Collaborator email — Anchor 1.0 (Windows + Mac)
+# Collaborator email — Anchor 1.0.2 (Windows + Mac)
 
-Copy/paste ready. Update the greeting if you want; the install blocks are the source of truth for **v1.0.1**.
+Copy/paste ready. This is the **field-tested** install path after Package B failures on a stranger Windows machine (home placeholder, broken `anchor_gui.py`, missing modules).
 
 ---
 
-**Subject:** Anchor 1.0 — install in a few commands (Windows & Mac)
+**Subject:** Anchor 1.0 — install (Windows & Mac) — use **v1.0.2**
 
 ---
 
 Hi —
 
-Anchor **version 1.0** is ready. Public repo, full product + skills in one clone. Works on **Windows** and **Mac**.
+Anchor **version 1.0** is ready (public tag **`v1.0.2`** — please use this tip, not an older clone).  
+One repo = product + skills. Works on **Windows** and **Mac**.
+
+If you already cloned earlier, update first:
+
+```text
+cd Anchor
+git pull
+git checkout v1.0.2
+```
+
+(or re-clone fresh below).
+
+---
 
 ## Windows
 
-Recommended install folder: `C:\dev`
+Recommended folders:
+
+- Clone under: `C:\dev\Anchor`
+- Onboard “home” default: **`C:\dev`** (skills + data live under that tree)
 
 ```text
 mkdir C:\dev
@@ -24,16 +40,34 @@ cd Anchor
 .\onboard.cmd
 ```
 
-What that does:
+**Prompts — what to type:**
 
-1. Clones Anchor **1.0** (current public tip / tag `v1.0.1`).
-2. `.\onboard.cmd` bootstraps Python via winget if needed, then runs the interactive onboard (home dir, skills, seat probes for Claude / agy / Grok). Feedback upload defaults to **No**.
-3. Skills come **with the clone** under `vendor/bundled-skills/` — onboard installs/registers them; you don’t clone a second skills repo.
-4. For full Anchor + skills (Package B): starts the service if needed, checks the local dashboard, and places a desktop **Anchor** icon that restarts the service if it’s down and opens the browser.
+1. **Home directory** — press Enter to accept **`C:\dev`**, or type another **real** folder (e.g. `C:\dev\Anchorhome`).  
+   Never enter the text `<path>` (that was a packaging bug in older tips).
+2. **Package** — press Enter for **B** (Anchor + skills).
+3. **Permissions** — **Y**.
+4. **Feedback** — default **N** is fine (or Y if you want).
+
+**What success looks like:**
+
+- Skills list installs (crucible, foreman, gandalf, …).
+- Seat line for Claude shows **ok** if `claude` is on PATH (you do **not** need a special env var).
+- Package B: **B_ready: YES** (or dashboard opens).
+- Desktop icon **Anchor Dashboard** appears.
+
+If Claude is installed but PATH was opened before install: close PowerShell, open a **new** window, re-run `.\onboard.cmd`.
+
+After onboard:
+
+- Double-click **Anchor Dashboard** on the Desktop, or run:
+
+```text
+python launch_anchor_dashboard.py
+```
+
+---
 
 ## Mac
-
-Recommended install folder: `~/dev`
 
 ```text
 mkdir -p ~/dev
@@ -44,32 +78,30 @@ chmod +x ./onboard.sh
 ./onboard.sh
 ```
 
-What that does:
+Home default is typically `~/dev`. Same Package **B** / permissions / feedback flow.  
+Desktop launcher: **Anchor Dashboard.command** (double-click).  
+Or: `python3 launch_anchor_dashboard.py`
 
-1. Same clone — full product + skills.
-2. `./onboard.sh` checks for Python 3.8+ (`python3`). If missing: `brew install python` (or python.org), then re-run `./onboard.sh`.
-3. Same interactive onboard (home often `~/dev`, skills, seat probes). Feedback defaults to **No**.
-4. Package B: starts the dashboard in the background if needed, probes http://localhost:8777, and puts **Anchor Dashboard.command** on the Desktop (double-click in Finder). In-dashboard agent terminals use a Mac-native PTY (no extra install).
-
-After install you can also run:
-
-```text
-python3 launch_anchor_dashboard.py
-```
+---
 
 ## Requirements
 
-- **git** and network for the clone  
-- **Windows:** winget can install Python if needed  
-- **Mac:** Python 3.8+ (Homebrew or python.org)  
-- Model CLIs you already use for seats: Claude Code / agy / Grok, logged in and on PATH  
+- **git** + network  
+- **Windows:** Python 3.8+ (onboard can use winget)  
+- **Mac:** Python 3.8+ (`brew install python` if needed)  
+- At least one coding CLI on PATH and logged in: **Claude Code** and/or **agy** and/or **Grok**  
 
-## Version
+Skills ship **inside** the repo under `vendor/bundled-skills/` — no second clone.
 
-This is **Anchor 1.0** (public tag **`v1.0.1`** — Mac/Windows install parity patch on the 1.0 line).  
+---
+
+## If something still fails
+
+1. Confirm version: open `VERSION` in the clone — must say **`1.0.2`**.  
+2. `git pull` / re-clone if older.  
+3. Send the last screen of `.\onboard.cmd` (or `./onboard.sh`) plus OS + Python version.
+
 Repo: https://github.com/johncliechty/Anchor  
-
-Repo is public for easy clone (can be made private later if you want).
 
 Questions → reply here.
 
@@ -77,7 +109,7 @@ Questions → reply here.
 
 ---
 
-## Short version (if you need a brief note)
+## Short version
 
 ```text
 Windows:
@@ -85,6 +117,7 @@ Windows:
   git clone https://github.com/johncliechty/Anchor.git
   cd Anchor
   .\onboard.cmd
+  # home prompt: accept C:\dev   (never type <path>)
 
 Mac:
   mkdir -p ~/dev && cd ~/dev

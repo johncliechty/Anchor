@@ -677,17 +677,26 @@ def probe_seat(
     path = _path_for_family(family, env, which)
     path_present = bool(path)
     if not live_probes_enabled(env):
+        # Collaborator cold-start: CLI on PATH is enough for coding-seat readiness.
+        # Live session probes remain opt-in via ANCHOR_SHARE_LIVE_PROBES=1.
         return {
             "family": family,
             "transport": SEAT_TRANSPORTS[family],
             "path_present": path_present,
             "session_visible": False,
-            "ok": False,
+            "ok": bool(path_present),
             "path_only": path_present,
-            "status": "live-probes-disabled",
+            "status": (
+                "path-ok-live-probe-skipped"
+                if path_present
+                else "not-on-path"
+            ),
             "api_key_fallback": False,
             "disabled": False,
             "source": "path-only-no-live",
+            "reason_codes": (
+                ["live_probe_skipped"] if path_present else ["seat_not_on_path"]
+            ),
         }
 
 
@@ -4312,11 +4321,11 @@ def run_interactive_onboard(
     if not seats.get("coding_seat_ok"):
         _print(
             print_fn,
-            "  No coding-capable subscription seat yet (claude / agy / grok).",
+            "  No coding-capable subscription CLI found on PATH (claude / agy / grok).",
         )
         _print(
             print_fn,
-            "  Install at least one subscription CLI, then re-run onboard.",
+            "  Install at least one (claude / agy / grok), ensure it is on PATH, then re-run.\n  Note: PATH presence is enough for readiness; set ANCHOR_SHARE_LIVE_PROBES=1 only if you want a live session probe.",
         )
         for fam, link in (
             ("claude", PREREQ_FIX_LINKS["claude"]),

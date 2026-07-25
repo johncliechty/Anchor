@@ -1,8 +1,15 @@
-# Anchor 1.0.1
+# Anchor 1.0.2
 
 **Public collaborator release** — all rights reserved (not open source).
 
-Patch over **1.0.0** with macOS/Linux cold-start parity for the same product tree.
+Hotfix over **1.0.1** so Package B actually works on a stranger Windows machine.
+
+## What 1.0.2 fixes (collaborator field report)
+
+1. **Windows home default** was the literal placeholder `<path>` → now **`C:\dev`**
+2. **`anchor_gui.py` line-ending corruption** (extra CR bytes) → clean file that Python can compile
+3. **Missing modules** required to start the dashboard (`supervisor`, `anchor_settings`, foundry/usage helpers, …) → included
+4. **Seat probe** treated “Claude on PATH” as failure without live probes → PATH presence is enough for readiness (live probe still opt-in)
 
 ## Cold start
 
@@ -16,6 +23,9 @@ cd Anchor
 .\onboard.cmd
 ```
 
+At the home prompt, accept the default **`C:\dev`** (or type another real folder).  
+Do **not** enter the text `<path>`.
+
 ### macOS / Linux
 
 ```text
@@ -27,20 +37,8 @@ chmod +x ./onboard.sh
 ./onboard.sh
 ```
 
-## Contents
-
-- Anchor product + onboard shell (Windows `onboard.cmd` / macOS-Linux `onboard.sh`)
-- Vendored skills under `vendor/bundled-skills/` (installed by onboard into your skills root)
-- Service-aware desktop launcher:
-  - **Windows:** branded `.lnk` + service start when needed
-  - **macOS/Linux:** Desktop `.command` launcher + detached dashboard process; Package B ready = local HTTP probe OK
-
-## Skills in this tree
-
-See `vendor/bundled-skills/SOURCES.md`.
-
 ## Collaborator email
 
-See `COLLABORATOR-EMAIL.md` (copy/paste ready).
+See `COLLABORATOR-EMAIL.md`.
 
-Tag: **`v1.0.1`**. Development beyond this line continues on the private 1.1 tree.
+Tag: **`v1.0.2`**.
