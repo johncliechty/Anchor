@@ -42,7 +42,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { HaltError, haltForHuman, HALT_GATES } from './crucible-lib.mjs';
+import { HaltError, haltForHuman, HALT_GATES, draftToText, assertPlanText } from './crucible-lib.mjs';
 import { runMasterPlanLoop } from './stage1.mjs';
 import { resolveBandProfile, bandProfileStamp } from './band-profile.mjs';
 import { runWellFormednessGate } from './gates.mjs';
@@ -520,9 +520,11 @@ export function writeDocTrio({
     plan: path.join(dir, fileNames.plan),
     execution_log: path.join(dir, fileNames.execution_log),
   };
-  fs.writeFileSync(files.description, description);
-  fs.writeFileSync(files.plan, plan);
-  fs.writeFileSync(files.execution_log, executionLog);
+  // P1 2026-07-25 (0063 P0): the handoff PLAN goes through the canonical serializer +
+  // corrupt/short refusal — the engine never writes `[object Object]` or a stub plan.
+  fs.writeFileSync(files.description, draftToText(description));
+  fs.writeFileSync(files.plan, assertPlanText(plan, { label: 'implementation plan' }));
+  fs.writeFileSync(files.execution_log, draftToText(executionLog));
 
   // Sleep 0076 package 4: always emit Windows-safe expanding gate helper so
   // DEFAULT_TEST_COMMAND (`node scripts/run-all-tests.mjs`) is runnable at handoff
@@ -629,7 +631,12 @@ export function runHandoffGate({ projectDir, artifactsDir = null, runGate = runW
  * @param {Function}[o.log=()=>{}]
  */
 export function approveImplementationPlan({ loop, approved = false, log = () => {} } = {}) {
-  if (!loop || !loop.modelSideLockable) {
+  // P1 2026-07-25 (0069): a HUMAN-LOCKABLE loop is approvable when the user has
+  // explicitly approved — that is the human-lockable design ("approve to lock";
+  // the user is the convergence authority). Model-side convergence stays required
+  // in every other case; nothing here weakens the unapproved paths.
+  const humanLockApproved = !!(loop && loop.humanLockable && approved === true);
+  if (!loop || !(loop.modelSideLockable || humanLockApproved)) {
     throw haltForHuman(
       'Stage 2 has not converged model-side — cannot approve the Implementation Plan yet',
       'stage2-not-converged',
@@ -640,8 +647,10 @@ export function approveImplementationPlan({ loop, approved = false, log = () => 
     log('stage2: Implementation Plan converged model-side — HALT for the user to approve (the convergence authority)');
     throw haltForHuman(gate.reason, gate.name);
   }
-  log('stage2: Implementation Plan APPROVED — ready to emit + hand off');
-  return { approved: true, gate: gate.name, roundsRun: loop.roundsRun };
+  log(humanLockApproved
+    ? 'stage2: HUMAN-LOCKABLE Implementation Plan APPROVED by the user (convergence authority) — ready to emit + hand off'
+    : 'stage2: Implementation Plan APPROVED — ready to emit + hand off');
+  return { approved: true, gate: gate.name, roundsRun: loop.roundsRun, humanLockable: humanLockApproved || undefined };
 }
 
 // ---------------------------------------------------------------------------
@@ -778,7 +787,7 @@ export async function runStage2({
     //     final emission re-renders from the same structured waves, so well-formedness
     //     is guaranteed by construction regardless of free-text revision).
     live.lastStep = 'render-plan';
-    const plan = renderImplementationPlan({ title, northStar, criteria, waves, testCommand });
+    let plan = renderImplementationPlan({ title, northStar, criteria, waves, testCommand });
     live.plan = plan;
 
     // (3) The Shark-Tank loop to model-side convergence (Stage-1's generic loop).
@@ -809,6 +818,24 @@ export async function runStage2({
         }),
       });
     } catch (e) {
+      // P1 2026-07-25 (journal 0069): with `approved: true` the user has ALREADY
+      // exercised the convergence authority — a human-lockable / round-cap outcome
+      // must EMIT-AND-RETURN on the real outputDir ("go go go" was impossible: the
+      // loop re-tanked, threw, and no doc-trio was ever written; the only recovery
+      // was an out-of-tree force-emit script). The machine well-formedness gate
+      // below still fails closed; only the throw-without-docs is retired.
+      const lockableWithApproval = approved === true && e && e.halt_for_human &&
+        (e.pending_action === 'stage1-human-lockable' || e.pending_action === 'stage2-round-cap') &&
+        (e.loop?.draft != null || e.best_draft != null);
+      if (lockableWithApproval) {
+        plan = assertPlanText(e.loop?.draft ?? e.best_draft, { label: 'implementation plan (human-lockable best draft)' });
+        loop = e.loop
+          ? { ...e.loop, humanLockable: true }
+          : { humanLockable: true, modelSideLockable: false, roundsRun: e.best_draft?.roundsRun ?? null, draft: plan };
+        log(`stage2: approved:true + ${e.pending_action} — emitting the HALT's best draft as the handoff ` +
+          `(0069 emit-and-return; the user is the convergence authority; well-formedness gate still applies)`);
+        stampStage2Progress(stateDir, { phase: 'shark-tank', status: 'human-lockable-approved' });
+      } else {
       if (e && e.halt_for_human && e.pending_action === 'stage2-round-cap') {
         const draftDir = path.join(path.resolve(outputDir), '_unapproved-cap-draft');
         try {
@@ -837,6 +864,7 @@ export async function runStage2({
         }
       }
       throw e;
+      }
     }
     stampStage2Progress(stateDir, { phase: 'shark-tank', status: 'done' });
 

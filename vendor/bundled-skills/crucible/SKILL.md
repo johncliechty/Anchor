@@ -169,7 +169,17 @@ user is the final convergence authority**.
 > 1. **Pass `statusLog: '<outputDir>/_crucible-status.log'`** into `runStage1`/`runStage2` — the loop
 >    then writes the LOCKED Status table there at t=0, every ~10 min, and on stop (`bin/status-heartbeat.mjs`;
 >    OFF when `statusLog` is omitted, so tests/dogfood stay silent). Crucible had NO emitter before this.
-> 2. **Run the stage in the BACKGROUND** (Bash `run_in_background: true`), never a blocking foreground call.
+> 2. **Run the stage detached from the agent job tree.** P1 2026-07-25 (journals 0020–0027,
+>    0064–0067): stages launched via the agent's background Bash (`run_in_background: true`) or
+>    `Start-Process -WindowStyle Hidden` died SILENTLY 9+ times — external job-object SIGKILL, not
+>    catchable in-process (0066 proved even installed lifetime guards + a watchdog all died with a
+>    frozen heartbeat and 0-byte stderr). The PROVEN survivor (0067, ~44 min end-to-end) is a
+>    **Windows Scheduled-Task breakaway**:
+>    `schtasks /create /tn crucible-<name> /tr "node <launcher> ..." /sc once /st <now+1min> /f`
+>    then `schtasks /run /tn crucible-<name>` (delete after). For FULL runs use schtasks; a
+>    foreground tool-owned node call also survives (0027) when the operator can hold the window.
+>    In-process guards now cover BOTH stages (last-crash.json + HALT.json + per-round BEST-DRAFT.md),
+>    but they cannot catch a job-object kill — the launch path is the real mitigation.
 > 3. **Arm the cadence at launch** (`ScheduleWakeup` ~600s or `/loop 10m`) and **each tick READ the tail
 >    of `_crucible-status.log` (shell-free) and POST the latest status to chat in the LOCKED Status-table
 >    format — canonical definition in ONE place: user-global `AGENTS.md` → "Long-run progress updates"

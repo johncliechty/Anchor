@@ -36,9 +36,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
-import { HaltError, newCheckpoint, writeCheckpointAtomic, renderDashboard } from './foreman-lib.mjs';
+import { HaltError, newCheckpoint, writeCheckpointAtomic, renderDashboard, parseWaves, discoverTestCommand, locateDocs } from './foreman-lib.mjs';
 
 // ---------------------------------------------------------------------------
 // Agent-wait heartbeat (0082 P0.3 / 2026-07-24 thrash cleanup)
@@ -568,12 +568,37 @@ function checkVacuousGreen(root, foremanDir, changedFiles, extra = {}) {
     const declaredTestOnly = /\[test[-_ ]?only\]/i.test(waveTitle);
     const rose = invNow.tests > invBefore.tests;
     const heldSteady = invNow.tests >= invBefore.tests;
+    // P1 2026-07-25 (journals 0035/0041, aggravated by 0086 wave-scoped gates):
+    // `gateTap.tests >= invNow.tests` compared the gate's EXECUTED count against the
+    // WHOLE-REPO static inventory (observed live: 29 vs 2597) — an unsatisfiable bar
+    // when the PLAN declares a wave-scoped `gate-command:`, which false-halted
+    // terminal acceptance waves even with [test-only] applied. The full-suite bar
+    // stays the first acceptance. A PLAN-DECLARED scoped gate (extra.gateScoped —
+    // the plan is the authority that this subset IS the wave's gate) passes when it
+    // executed at least the wave's NET-NEW test count (>=1 for modify-only
+    // [test-only] waves). An undeclared subset run stays a conservative HALT —
+    // counts alone cannot prove WHICH tests ran (§5; the T4 bar is not weakened).
+    const gateScoped = extra.gateScoped === true;
+    const netNew = invNow.tests - invBefore.tests;
     const ranFullSuite = gateTap.tests >= invNow.tests;
-    if (rose && ranFullSuite) return null;
-    if (declaredTestOnly && heldSteady && ranFullSuite) return null;
+    const ranScopedSuite = gateScoped && gateTap.tests >= Math.max(1, netNew);
+    if (rose && (ranFullSuite || ranScopedSuite)) return null;
+    if (declaredTestOnly && heldSteady && (ranFullSuite || (gateScoped && gateTap.tests >= 1))) return null;
   }
 
-  if (sources.length === 0) {
+  if (code.length === 0) {
+    // P1 2026-07-25 (0076 RC3): prior-attempt credit runs BEFORE the doc/data and
+    // no-op branches. A resume/clear-halt second pass that touched only doc/status
+    // artifacts took the doc/data HALT below without ever consulting the prior
+    // attempt's proven ledger — the exact plan-amend→clear-halt→vacuous cascade.
+    // Phase A (2026-07-22) semantics unchanged: NEVER credits without a ledger +
+    // live files + exercise.
+    const prior = creditPriorWaveAttempt(root, foremanDir, extra.waveN, {
+      reach,
+      exercisedByName,
+    });
+    if (prior.ok) return null;
+
     if (changedTests.length > 0) {
       // A test-only wave that FAILED the evidence bar: say exactly which leg failed
       // so the human clears it in one look, not a checkpoint autopsy.
@@ -581,30 +606,20 @@ function checkVacuousGreen(root, foremanDir, changedFiles, extra = {}) {
         `evidence bar did not pass: declared tests ${invBefore ? invBefore.tests : '?'} -> ` +
         `${invNow ? invNow.tests : '?'}, green gate executed ${gateTap && Number.isInteger(gateTap.tests) ? gateTap.tests : '?'} ` +
         `— a test-only wave auto-passes when the inventory ROSE and the green gate ran the ` +
-        `larger suite (or tag the wave title [test-only] for a modify-only test wave)`;
+        `full or wave-scoped suite (or tag the wave title [test-only] for a modify-only test wave)`;
     }
-    // Phase A (2026-07-22): credit a PRIOR same-wave attempt that already left
-    // code on disk + a proven ledger entry (resume / clear-halt / re-enter after
-    // plan amendment). Journals 0010, 0015, 0043, 0045: hashStart-at-resume makes
-    // a second pass look like a no-op while the deliverable is still there and
-    // still exercised. NEVER credits without a ledger + live files + exercise.
-    const prior = creditPriorWaveAttempt(root, foremanDir, extra.waveN, {
-      reach,
-      exercisedByName,
-    });
-    if (prior.ok) return null;
-
-    // F2-9: the wave changed no source file at all (a no-op wave, or one that
-    // touched only tests/non-source). An already-green suite proves nothing.
-    return `wave reached green without proving its own deliverable was exercised ` +
-      `— the wave changed no source file reachable by an executed test, so an ` +
-      `already-green suite proves nothing about this wave's deliverable` +
-      (prior.note ? ` (${prior.note})` : '');
-  }
-  if (code.length === 0) {
+    if (sources.length === 0) {
+      // F2-9: the wave changed no source file at all (a no-op wave, or one that
+      // touched only tests/non-source). An already-green suite proves nothing.
+      return `wave reached green without proving its own deliverable was exercised ` +
+        `— the wave changed no source file reachable by an executed test, so an ` +
+        `already-green suite proves nothing about this wave's deliverable` +
+        (prior.note ? ` (${prior.note})` : '');
+    }
     return `wave changed only doc/data artifacts (${sources.join(', ')}) — such files ` +
       `can be regenerated by the gate run itself and cannot prove this wave's ` +
-      `deliverable; if this wave is genuinely docs-only, a human must confirm`;
+      `deliverable; if this wave is genuinely docs-only, a human must confirm` +
+      (prior.note ? ` (${prior.note})` : '');
   }
   return `GREEN gate did not exercise any changed source file ` +
     `(${code.join(', ')}) — no test reaches it; gate proves nothing about this wave`;
@@ -737,7 +752,7 @@ function countTestEvents(text) {
   return { pass, fail };
 }
 
-export function runGate({ projectDir, testCommand, foremanDir, wave, iteration }) {
+export async function runGate({ projectDir, testCommand, foremanDir, wave, iteration, heartbeat = null }) {
   // Gate-integrity hardening (Phase 1 finding M): run in a SANITIZED environment
   // so an inherited test-runner context cannot poison the ground truth. If the
   // orchestrator is itself spawned under `node --test`, the child inherits
@@ -754,20 +769,55 @@ export function runGate({ projectDir, testCommand, foremanDir, wave, iteration }
   const _t = Number(process.env.FOREMAN_GATE_TIMEOUT_MS);
   if (Number.isFinite(_t) && _t > 0) gateTimeout = _t;
   const _gateT0 = Date.now(); // SPIKE(foreman-parallel): gate wall-clock
-  const res = spawnSync(testCommand, {
+  // P1 2026-07-25 (0078 T1/T4/T8): ASYNC spawn, not spawnSync. spawnSync froze the
+  // Node event loop for up to the whole 20m cap — no heartbeat, log line, or status
+  // write was physically possible during a gate ("is it hung?" was structurally
+  // unanswerable). A timeout now (a) kills the child TREE (orphan pytest processes
+  // survived the shell kill and kept eating CPU — 0078 Facts 6), and (b) is
+  // CLASSIFIED as TIMEOUT_INCOMPLETE — never presented as a fixable RED with
+  // `0 pass 0 fail` (the fake-RED the FIX loop then chased for nothing).
+  let stdout = '';
+  let stderr = '';
+  let timedOut = false;
+  const child = spawn(testCommand, {
     cwd: projectDir,
     shell: true,
     windowsHide: true,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: gateTimeout,
     env,
   });
+  child.stdout.on('data', (d) => { stdout += d; });
+  child.stderr.on('data', (d) => { stderr += d; });
+  const killTree = () => {
+    try {
+      if (process.platform === 'win32' && child.pid) {
+        spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true });
+      } else {
+        child.kill('SIGKILL');
+      }
+    } catch { /* already gone */ }
+  };
+  const killer = setTimeout(() => { timedOut = true; killTree(); }, gateTimeout);
+  if (typeof killer.unref === 'function') killer.unref();
+  let hb = null;
+  if (typeof heartbeat === 'function') {
+    hb = setInterval(() => {
+      const tail = (stdout + '\n' + stderr).trimEnd().split(/\r?\n/).filter(Boolean).at(-1) || '';
+      try { heartbeat({ elapsedMs: Date.now() - _gateT0, lastLine: tail.slice(0, 200) }); } catch { /* never crash the gate */ }
+    }, 60_000);
+    if (typeof hb.unref === 'function') hb.unref();
+  }
+  let exitCode;
+  try {
+    exitCode = await new Promise((resolveExit) => {
+      child.on('error', (err) => { stderr += `\nspawn error: ${err?.message ?? err}`; resolveExit(null); });
+      child.on('close', (code) => resolveExit(code)); // null if killed by signal
+    });
+  } finally {
+    clearTimeout(killer);
+    if (hb) clearInterval(hb);
+  }
   const _gateMs = Date.now() - _gateT0;
-  const stdout = res.stdout || '';
-  const stderr = res.stderr || '';
   const merged = stdout + '\n' + stderr;
-  const exitCode = res.status; // null if killed by signal
   const tap = {
     tests: parseCount(merged, 'tests'),
     pass: parseCount(merged, 'pass'),
@@ -832,7 +882,7 @@ export function runGate({ projectDir, testCommand, foremanDir, wave, iteration }
   // (real FAILED/ERROR per-test events, exit 1) is NOT vacuous — it keeps the
   // normal RED / fix-loop path so red→green can be driven. (The exit-0 forged-
   // echo and inconsistency cases are already handled above.)
-  if (!green && !vacuous_reason && looksLikePytest(merged)) {
+  if (!green && !vacuous_reason && !timedOut && looksLikePytest(merged)) {
     // T3 (2026-07-11): TRUST THE PARSED SUMMARY FIRST. A real `N passed/M failed`
     // banner proves tests RAN even when no per-test EVENTS were emitted — pytest
     // without `-v` prints dots, not events — so a genuine RED must keep the
@@ -860,6 +910,21 @@ export function runGate({ projectDir, testCommand, foremanDir, wave, iteration }
           : 'no per-test events'}) — refusing vacuous GREEN`;
     }
   }
+  // P1 2026-07-25 (0078 T1): a timed-out gate is INCOMPLETE, not RED — it proved
+  // nothing either way. Classify + carry progress so the operator sees
+  // "timeout · incomplete (37%)" instead of the lying "0 pass 0 fail". A timed-out
+  // gate also never takes a vacuous label (the suite didn't decline to run — it
+  // was killed mid-run).
+  if (timedOut) vacuous_reason = null;
+  let progress_pct = null;
+  if (timedOut) {
+    const pcts = merged.match(/\[\s*(\d{1,3})%\]/g);
+    if (pcts && pcts.length) {
+      const last = pcts[pcts.length - 1].match(/(\d{1,3})/);
+      if (last) progress_pct = Number(last[1]);
+    }
+  }
+  const gate_class = timedOut ? 'TIMEOUT_INCOMPLETE' : green ? 'GREEN' : vacuous_reason ? 'VACUOUS' : 'RED';
   const artifact = {
     written_by: 'orchestrator',        // sub-agents cannot write this file (§5)
     wave: wave?.n ?? null,
@@ -868,6 +933,10 @@ export function runGate({ projectDir, testCommand, foremanDir, wave, iteration }
     cwd: projectDir,
     exit_code: exitCode,
     green,
+    gate_class,                        // GREEN | RED | VACUOUS | TIMEOUT_INCOMPLETE
+    timed_out: timedOut,
+    timeout_ms: gateTimeout,
+    progress_pct,                      // last pytest `[ N%]` marker seen before the kill
     gate_ms: _gateMs,                  // SPIKE(foreman-parallel): gate wall-clock
     vacuous_reason,                    // R2-3: non-null ⇒ exit-0-but-not-real-GREEN
     tap,
@@ -1068,13 +1137,34 @@ export async function runWave(o) {
   let lastCitation = exec?.citation || null;
 
   // Wave-scoped gate when plan declares per-wave gate-command (0082 P1.6).
-  const waveTestCommand = resolveWaveGateCommand(wave, testCommand);
+  // P1 2026-07-25 (0078 T7): re-resolved from the plan ON DISK every iteration, so a
+  // mid-run plan amendment rebinds the live gate without a process restart (observed
+  // live: "Plan amend did not rebind the live gate"). Falls back to the invocation
+  // bindings when the plan is unreadable.
+  let waveTestCommand = resolveWaveGateCommand(wave, testCommand);
   if (waveTestCommand !== testCommand) {
     log(`gate: wave-scoped command for wave ${wave.n}: ${waveTestCommand}`);
   }
+  const rebindGate = () => {
+    try {
+      const txt = fs.readFileSync(planPath, 'utf8');
+      const d = discoverTestCommand(txt, projectDir); // returns { command, source }
+      const fresh = (d && typeof d === 'object' ? d.command : d) || testCommand;
+      let fw = null;
+      try { fw = parseWaves(txt).find((w) => w?.n === wave?.n) || null; } catch { fw = null; }
+      return resolveWaveGateCommand(fw ?? wave, fresh || testCommand);
+    } catch {
+      return resolveWaveGateCommand(wave, testCommand);
+    }
+  };
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    const reboundCmd = rebindGate();
+    if (reboundCmd !== waveTestCommand) {
+      log(`gate: command REBOUND from plan on disk (was: ${waveTestCommand}) → ${reboundCmd}`);
+      waveTestCommand = reboundCmd;
+    }
     // §8: measure changed set before gate so syntax smoke can target it.
     const changedPre = git ? git.changedVsHead() : changedSince(projectDir, foremanDir, hashStart);
     lastChanged = changedPre;
@@ -1091,9 +1181,27 @@ export async function runWave(o) {
     }
 
     // ----- ORCHESTRATOR GATE (ground truth) -----
-    lastGate = runGate({
+    // Async + heartbeat (0078 T4/T8): the gate now emits `gate running · t+Nm · last:
+    // <line>` and updates waiting-on.json every minute — during a gate the operator can
+    // finally tell hung from working.
+    lastGate = await agentWait('gate', () => runGate({
       projectDir, testCommand: waveTestCommand, foremanDir, wave, iteration,
-    });
+      heartbeat: ({ elapsedMs, lastLine }) =>
+        log(`gate running · t+${Math.max(1, Math.round(elapsedMs / 60000))}m · last: ${lastLine || '(no output yet)'}`),
+    }));
+    if (lastGate.timed_out) {
+      // 0078 T1: a killed gate proved NOTHING — never a "0 pass 0 fail" RED for the
+      // FIX loop to chase. HALT with the honest class + progress and a scoping steer.
+      const mins = Math.round((lastGate.timeout_ms ?? 0) / 60000);
+      const prog = lastGate.progress_pct != null ? ` at ~${lastGate.progress_pct}% of the suite` : '';
+      const reason = `[taxonomy:gate-timeout] HALT: gate timed out INCOMPLETE after the ${mins}m cap${prog} — tests did not fail; they did not finish`;
+      steps.push(`✗ ${reason}`);
+      log(`gate (iter ${iteration}): TIMEOUT · incomplete after ${Math.round((lastGate.gate_ms ?? 0) / 1000)}s${prog} (child tree killed)`);
+      return finishHalt({ reason, recommend:
+        `[taxonomy:gate-timeout] the gate command (${waveTestCommand}) did not finish under the ${mins}m cap. ` +
+        `Scope the suite (per-wave \`gate-command:\` in the plan) or raise FOREMAN_GATE_TIMEOUT_MS, then re-invoke wave ${wave.n}. ` +
+        `Do NOT treat this as failing tests — no fix iteration can drive an unfinished suite green.` });
+    }
     log(`gate (iter ${iteration}): exit ${lastGate.exit_code} · ` +
       `tests ${lastGate.tap.tests} pass ${lastGate.tap.pass} fail ${lastGate.tap.fail}`);
 
@@ -1317,6 +1425,9 @@ export async function runWave(o) {
         gateTap: lastGate.tap,
         waveTitle: wave.title || '',
         waveN: wave.n,
+        // P1 2026-07-25: true iff the PLAN declared a wave-scoped gate — the authority
+        // under which the test-only bar may accept a scoped executed count (0035/0041).
+        gateScoped: waveTestCommand !== testCommand,
       });
       if (vac) {
         const reason = `vacuous-GREEN HALT: ${vac}`;
@@ -1412,6 +1523,23 @@ export async function runWave(o) {
 
   function finishGo() {
     const status = wave.n === totalWaves ? 'done' : 'running';
+    // P1 2026-07-25 (journals 0023/0025/0028/0058, 0076 RC2): EXECUTION-LOG.md had
+    // NO writer anywhere in the engine — downstream EXECUTE agents read it to confirm
+    // prerequisite waves and refused/halted repeatedly (five halts on one wave)
+    // because it never recorded prior waves as done. Append one GREEN line per GO,
+    // BEFORE the commit so the line rides this wave's own commit. Best-effort: a
+    // project without a locatable execution log must never fail a proven wave.
+    try {
+      const docs = locateDocs(projectDir);
+      if (docs && docs.execution_log) {
+        const p = path.isAbsolute(docs.execution_log) ? docs.execution_log : path.join(projectDir, docs.execution_log);
+        const line = `- ${new Date().toISOString()} — Wave ${wave.n}/${totalWaves} GREEN` +
+          `${wave.title ? ` — ${wave.title}` : ''} (gate exit ${lastGate?.exit_code ?? '?'} · ` +
+          `tests ${lastGate?.tap?.tests ?? '?'} pass ${lastGate?.tap?.pass ?? '?'} fail ${lastGate?.tap?.fail ?? '?'} · iter ${iteration}; appended by orchestrator on GO)\n`;
+        fs.appendFileSync(p, line, 'utf8');
+        steps.push(`▸ execution log: appended Wave ${wave.n} GREEN`);
+      }
+    } catch { /* best-effort — never block a proven GO on log bookkeeping */ }
     // ----- §9 commit-on-GO + §8 ORDER: COMMIT first, THEN checkpoint -----
     // The commit happens ONLY here, after a genuine GO through the hardened gate
     // (an unproven/vacuous/RED/HALTed wave never reaches finishGo). The checkpoint

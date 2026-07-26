@@ -42,11 +42,12 @@ export async function runWithSchema({ transport, prompt, schema, label = '(unlab
     obj = extractJson((await transport(strict, schema, `${label}#retry`)).text);
   }
   if (!obj) {
-    log(`   !! ${label} still unparseable after retry — ABSTAIN (answerable:no) -> engine HALTs for human review`);
+    log(`   !! ${label} still unparseable after retry — TRANSPORT FAILURE (abstain; degradable)`);
     return {
       answerable: 'no',
-      note: `reviewer ${label} response was not parseable JSON after one retry — cannot verify ` +
-        `its findings; HALT for human review`,
+      transport_failed: true,
+      note: `reviewer ${label} response was not parseable JSON after one retry ` +
+        `(transport failure, not a plan problem)`,
       findings: [],
     };
   }

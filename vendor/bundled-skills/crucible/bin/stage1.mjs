@@ -38,6 +38,7 @@ import path from 'node:path';
 import { HaltError, haltForHuman, HALT_GATES } from './crucible-lib.mjs';
 import { startStatusHeartbeat } from './status-heartbeat.mjs';
 import { runSharkTank } from './shark-tank.mjs';
+import { installProcessLifetimeGuards, withPhaseProgress } from '../../drivers/process-lifetime.mjs';
 import {
   makeSynthesizer,
   freshEyesColdPass,
@@ -522,14 +523,45 @@ function revisePrompt({ northStar, draft, verdict, direction, markdownFirst = fa
   ].join('\n');
 }
 
+/** 0013 structural lint: a corrupted merge (e.g. a `$`-pattern splice in String.replace)
+ * interleaves whole copies of the plan into itself. Detect the two signatures — a repeated
+ * top-level H1 heading, or leftover search/replace block markers — so a corrupted revision
+ * is rejected and the prior draft kept. Exported for tests. */
+export function detectDraftCorruption(text) {
+  const s = String(text);
+  const counts = new Map();
+  for (const line of s.split(/\r?\n/)) {
+    const t = line.trim();
+    if (/^#\s/.test(t)) counts.set(t, (counts.get(t) || 0) + 1);
+  }
+  for (const [h, n] of counts) {
+    if (n >= 2) return `top-level heading repeated ${n}x: "${h.slice(0, 60)}"`;
+  }
+  if (/^(<<<<|>>>>)\s*$/m.test(s)) return 'leftover search/replace block markers in draft';
+  return null;
+}
+
 /** Exported for tests (the schema-first / raw-text fallback contract). */
-export async function reviseDraft({ agent, northStar, draft, verdict, direction, round, log = () => {} }) {
+export async function reviseDraft({ agent, northStar, draft, verdict, direction, round, depth = null, family = null, log = () => {} }) {
   // EI1 (2026-07-17): a LARGE draft is revised MARKDOWN-FIRST — a document need not be a JSON
   // string, and serializing a ~100KB draft into JSON is the fragility that stalled Stage-1c
   // (repeated "reply was not valid JSON" retries). Small drafts stay schema-first so the
   // structured changelog briefing survives. The raw-markdown parse below recovers the draft
   // either way; a null/empty reply keeps the prior draft (never lose a round's work).
-  const markdownFirst = Buffer.byteLength(String(draft)) >= REVISE_MARKDOWN_BYTES;
+  //
+  // P1 2026-07-25 (journal 0040 verbatim ask; corroborated 0043/0053/0056/0058/0060/
+  // 0070-e1/0075-e4/0076-e4): the path is now chosen by BAND/FAMILY/DELTA, not byte
+  // count alone. LITE drafts run 8-17KB — always under the byte threshold — so LITE
+  // always took the fragile schema-JSON path and paid full rounds for 0 changes
+  // ("reply was not valid JSON" → retry → ABSTAIN). Grok seats parse worst; and a
+  // round with <=2 blocking findings takes the search/replace PATCH path regardless
+  // of size (0068: an 8.5-minute full re-emit of a 39KB draft produced "1 change(s)").
+  const findingCount = Array.isArray(verdict?.blockers) ? verdict.blockers.length : null;
+  const markdownFirst =
+    Buffer.byteLength(String(draft)) >= REVISE_MARKDOWN_BYTES ||
+    String(depth ?? '').toUpperCase() === 'LITE' ||
+    String(family ?? '').toLowerCase().includes('grok') ||
+    (Number.isInteger(findingCount) && findingCount > 0 && findingCount <= 2);
   const prompt = revisePrompt({ northStar, draft, verdict, direction, markdownFirst });
   const out = markdownFirst
     ? await agent(prompt, { label: `stage1:revise:r${round}` })                       // schema-less → raw markdown
@@ -556,13 +588,16 @@ export async function reviseDraft({ agent, northStar, draft, verdict, direction,
         const search = match[1];
         const replace = match[2];
         if (revised.includes(search)) {
-          revised = revised.replace(search, replace);
+          // Function replacement: model output may contain `$`-patterns ($`, $', $&) that
+          // String.replace would expand into surrounding-document splices (journal 0013 —
+          // the draft ended as ~3 interleaved copies of itself).
+          revised = revised.replace(search, () => replace);
           changelog.push('Applied a search/replace patch');
         } else {
           changelog.push('FAILED patch: search text not found in draft');
           // Try a trimmed fallback just in case
           if (search.trim() && revised.includes(search.trim())) {
-             revised = revised.replace(search.trim(), replace.trim());
+             revised = revised.replace(search.trim(), () => replace.trim());
              changelog.push('Applied patch using trimmed fallback');
           }
         }
@@ -582,6 +617,17 @@ export async function reviseDraft({ agent, northStar, draft, verdict, direction,
         ? ['(Raw markdown parsed, changelog omitted)']
         : [];
       log(`stage1 revise r${round}: structured reply unavailable — raw-text fallback (changelog omitted)`);
+    }
+  }
+  // 0013 structural guard: reject a revision that interleaved copies of the plan into
+  // itself (splice corruption) — only when the PRIOR draft was clean, so a legitimately
+  // unusual draft can still be revised.
+  if (revised !== draft) {
+    const corruption = detectDraftCorruption(revised);
+    if (corruption && !detectDraftCorruption(draft)) {
+      log(`stage1 revise r${round}: REJECTED corrupted revision (${corruption}) — keeping prior draft (0013 guard)`);
+      revised = draft;
+      changelog = [];
     }
   }
   // EI1 completeness guard (2026-07-17): never let a markdown-first revise SHRINK the plan
@@ -683,6 +729,22 @@ export async function runMasterPlanLoop({
   // selection/stamp is DERIVED from where the judge role actually dispatches —
   // a route to a non-author family stamps enhanced/cross_model honestly.
   const jdg = judge || makeJudge({ agent, routes, log });
+  // P1 2026-07-25: derive the revise seat's FAMILY and an honest per-seat substrate
+  // stamp from the live routes (journal 0070-e1 item 3: the status table hardcoded
+  // "(agy 5:1)" while every seat was grok — the prose lied about the substrate).
+  const famOf = (r) => {
+    const d = String(r?.family ?? r?.driver ?? '').toLowerCase();
+    if (!d) return null;
+    if (d.includes('gemini')) return 'gemini';
+    if (d.includes('grok')) return 'grok';
+    return 'claude';
+  };
+  const reviseFamily = famOf(routes?.revise) ?? famOf(routes?.default) ??
+    String(process.env.CODING_FAMILY ?? '').toLowerCase() ?? null;
+  const seatStamp = routes
+    ? `sharks∥(${famOf(routes.review) ?? famOf(routes.shark) ?? famOf(routes.default) ?? 'claude'}) + ` +
+      `judge(${famOf(routes.judge) ?? famOf(routes.default) ?? 'claude'}) + synthesizer(${famOf(routes.synthesizer) ?? famOf(routes.default) ?? 'claude'})`
+    : 'sharks∥ + judge + synthesizer (single-agent seam — no routes bound)';
   const bounds = resolveLoopBounds({ startRound, roundCap, additionalRounds });
   if (bounds.remaining === 0) {
     const err = haltForHuman(
@@ -720,7 +782,7 @@ export async function runMasterPlanLoop({
         status: `${rounds.length} this invoke / ${bounds.remaining} budgeted`,
         tests: last ? `last round: ${last.verdict.verdict}` : '—',
         blocker: openBlk ? `${openBlk} open blocker(s) this round` : 'none',
-        procs: 'sharks∥ + judge + synthesizer (agy 5:1)',
+        procs: seatStamp,
         eta: `<= ${Math.max(0, bounds.remaining - rounds.length)} more round(s) this window`,
         todo: 'converge or human-lockable HALT, then the user-approval gate',
       };
@@ -730,6 +792,21 @@ export async function runMasterPlanLoop({
   let dryHeldStreak = 0;
   try {
   for (let round = bounds.startRound; round < bounds.endExclusive; round++) {
+    // P1 2026-07-25 (Stage-1 durability): persist the CURRENT draft + round marker at
+    // every round start — a process death mid-loop (the 9-death cluster) now loses at
+    // most one round; the operator recovers from BEST-DRAFT.md instead of nothing.
+    if (artifactsDir) {
+      try {
+        fs.mkdirSync(artifactsDir, { recursive: true });
+        fs.writeFileSync(path.join(artifactsDir, 'BEST-DRAFT.md'), String(currentDraft));
+        const pPath = path.join(artifactsDir, 'stage1-progress.json');
+        const tmp = `${pPath}.tmp`;
+        fs.writeFileSync(tmp, JSON.stringify({
+          phase: 'shark-round', round, status: 'start', ts: new Date().toISOString(), pid: process.pid,
+        }, null, 2) + '\n', 'utf8');
+        fs.renameSync(tmp, pPath);
+      } catch { /* best-effort — never crash the loop on durability bookkeeping */ }
+    }
     // Per-round research only on a genuinely NEW candidate (Wave-5 cost-guard).
     let analystBrief = null;
     if (research && typeof research.perRound === 'function') {
@@ -781,7 +858,7 @@ export async function runMasterPlanLoop({
       directed = true;
       rounds.push({ round, verdict, direction });
       priorBlockerIds = [...new Set([...priorBlockerIds, ...verdict.blockers.map((b) => b.id)])];
-      const rev = await reviseDraft({ agent, northStar, draft: currentDraft, verdict, direction, round, log });
+      const rev = await reviseDraft({ agent, northStar, draft: currentDraft, verdict, direction, round, depth, family: reviseFamily, log });
       currentDraft = rev.draft;
       lastChangelog = rev.changelog;
       if (artifactsDir) {
@@ -909,7 +986,7 @@ export async function runMasterPlanLoop({
       rounds[rounds.length - 1].direction = direction;
     }
     priorBlockerIds = [...new Set([...priorBlockerIds, ...verdict.blockers.map((b) => b.id)])];
-    const rev = await reviseDraft({ agent, northStar, draft: currentDraft, verdict, direction, round, log });
+    const rev = await reviseDraft({ agent, northStar, draft: currentDraft, verdict, direction, round, depth, family: reviseFamily, log });
     currentDraft = rev.draft;
     lastChangelog = rev.changelog;
     if (artifactsDir) {
@@ -1124,6 +1201,46 @@ export function assessHumanLockable({ tally = null, dryHeldStreak = 0 } = {}) {
  * @param {Function}[o.log=()=>{}]
  * @returns {Promise<{brainstorm:object, triage:object, plan:object, loop:object, approval:object}>}
  */
+/**
+ * P1 2026-07-25 — Stage-1 durability (the 9-death cluster: journals 0020/0021/0023/
+ * 0024/0025/0027/0064/0066/0075). Stage-2 got the full lifetime treatment on
+ * 2026-07-24 (wave 3 / 0075); Stage-1 — where most of the deaths actually happened —
+ * had NO guards, no last-crash.json, no HALT.json, and only one progress stamp
+ * (post-triage, from 0065). Mirror of writeStage2HaltJson; best-effort, never throws.
+ */
+export function writeStage1HaltJson(dir, {
+  reason = 'stage1 halted',
+  lastStep = null,
+  humanLockable = false,
+  artifacts = {},
+  pendingAction = 'stage1-process-death',
+  extra = {},
+} = {}) {
+  if (!dir) return null;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const payload = {
+      skill: 'crucible',
+      stage: 1,
+      reason: String(reason).slice(0, 2000),
+      last_step: lastStep,
+      human_lockable: !!humanLockable,
+      pending_action: pendingAction,
+      artifacts: artifacts && typeof artifacts === 'object' ? artifacts : {},
+      pid: process.pid,
+      ts: new Date().toISOString(),
+      ...extra,
+    };
+    const haltPath = path.join(dir, 'HALT.json');
+    const tmp = `${haltPath}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+    fs.renameSync(tmp, haltPath);
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 export async function runStage1({
   agent,
   northStar,
@@ -1153,6 +1270,44 @@ export async function runStage1({
   if (roundCap === undefined) roundCap = band.roundCap;
   log(`stage1: depth=${band.depth} → ${band.label} · roundCap=${roundCap} · liteBrainstorm=${band.skipFullOrangesBrainstorm} · sharks=${band.sharkRoles}`);
   log(`stage1: band stamp ${JSON.stringify(bandProfileStamp(band))}`);
+
+  // P1 2026-07-25: full lifetime guards for Stage-1 (the 9-death cluster). Every
+  // agent-call boundary stamps progress; process death writes last-crash.json +
+  // HALT.json pointing at the durable artifacts — never a silent freeze again.
+  const stateDir = artifactsDir ? path.resolve(artifactsDir) : null;
+  const progressPath = stateDir ? path.join(stateDir, 'stage1-progress.json') : null;
+  const live = { lastStep: 'init' };
+  let guards = null;
+  if (stateDir) {
+    try { fs.mkdirSync(stateDir, { recursive: true }); } catch { /* */ }
+    guards = installProcessLifetimeGuards({
+      log: (m) => { try { log(m); } catch { /* */ } },
+      crashPath: path.join(stateDir, 'last-crash.json'),
+      heartbeatPath: path.join(stateDir, 'heartbeat.json'),
+      label: 'crucible-stage1',
+      onFatal: (payload) => {
+        try {
+          const bestDraft = path.join(stateDir, 'BEST-DRAFT.md');
+          writeStage1HaltJson(stateDir, {
+            reason: `process death (${payload?.kind || 'fatal'}): ${String(payload?.message || '').slice(0, 400)}`,
+            lastStep: live.lastStep,
+            humanLockable: fs.existsSync(bestDraft),
+            artifacts: {
+              last_crash: path.join(stateDir, 'last-crash.json'),
+              progress: progressPath,
+              best_draft: fs.existsSync(bestDraft) ? bestDraft : null,
+              triage: fs.existsSync(path.join(stateDir, 'stage1-triage.json'))
+                ? path.join(stateDir, 'stage1-triage.json') : null,
+            },
+          });
+        } catch { /* never crash the crash handler */ }
+      },
+    });
+  }
+  const phased = (phase, fn) => {
+    live.lastStep = phase;
+    return withPhaseProgress({ phase: `stage1-${phase}`, log, progressPath, guards, fn });
+  };
 
   // SPIKE-FIRST mid path: probe before plan ceremony (cf-slick Wave D).
   if (band.requireSpikeProbe && !allowSpikeWithoutProbe) {
@@ -1193,32 +1348,95 @@ export async function runStage1({
   }
   const upfrontBrief = research?.forSynthesizer?.() ?? null;
 
-  // (1) Oranges brainstorm — FULL order, or LITE single-pass.
-  const brainstorm = await runBrainstorm({
+  // (1) Oranges brainstorm — FULL order, or LITE single-pass. (0066's death was
+  // PRE-assumption-map — earlier than the one 0065 stamp covered — so every
+  // agent-call boundary is now wrapped.)
+  const brainstorm = await phased('oranges-brainstorm', () => runBrainstorm({
     agent, northStar, criteria, research: upfrontBrief, log,
     lite: !!band.skipFullOrangesBrainstorm,
-  });
+  }));
 
   // (2) Batch idea-triage — the plan absorbs ONLY the integrated bucket.
   const triage = triageIdeas({ ideas: brainstorm.ideas, grasscatcherPath, log });
 
+  // F-H sleep fix (0064/F042–F045): durable progress stamp AFTER Oranges + triage and
+  // BEFORE the long phased-plan agent call (observed kill window). If the process dies
+  // mid-draft, operators see stage1-progress.json + last log line, not a silent freeze.
+  if (artifactsDir) {
+    try {
+      fs.mkdirSync(artifactsDir, { recursive: true });
+      const progress = {
+        phase: 'post-triage',
+        ts: new Date().toISOString(),
+        integrate: triage.integrate?.length ?? 0,
+        grasscatcher: triage.grasscatcher?.length ?? 0,
+        dropped: triage.dropped?.length ?? 0,
+        next: 'buildPhasedPlan',
+      };
+      const pPath = path.join(artifactsDir, 'stage1-progress.json');
+      const tmp = `${pPath}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(progress, null, 2) + '\n', 'utf8');
+      fs.renameSync(tmp, pPath);
+      fs.writeFileSync(
+        path.join(artifactsDir, 'stage1-triage.json'),
+        JSON.stringify({
+          integrate: triage.integrate,
+          grasscatcher: triage.grasscatcher,
+          dropped: triage.dropped,
+        }, null, 2) + '\n',
+        'utf8',
+      );
+      log(`stage1: durable progress stamped (post-triage → phased-plan; integrate=${progress.integrate})`);
+    } catch (e) {
+      log(`!! stage1 progress stamp failed (non-fatal): ${e?.message || e}`);
+    }
+  }
+  log(`stage1: building phased plan from ${triage.integrate?.length ?? 0} integrated idea(s)…`);
+
   // (3) The phased plan from the integrated ideas.
-  const plan = await buildPhasedPlan({
-    agent, northStar, criteria,
-    ideas: triage.integrate, assumptions: brainstorm.assumptions, premortem: brainstorm.premortem, log,
-  });
+  let plan;
+  try {
+    plan = await phased('phased-plan', () => buildPhasedPlan({
+      agent, northStar, criteria,
+      ideas: triage.integrate, assumptions: brainstorm.assumptions, premortem: brainstorm.premortem, log,
+    }));
+    if (artifactsDir) {
+      try {
+        const pPath = path.join(artifactsDir, 'stage1-progress.json');
+        fs.writeFileSync(pPath, JSON.stringify({
+          phase: 'phased-plan-done',
+          ts: new Date().toISOString(),
+          phases: plan?.phases?.length ?? 0,
+          next: 'master-plan-loop',
+        }, null, 2) + '\n', 'utf8');
+      } catch { /* best-effort */ }
+    }
+  } catch (e) {
+    if (artifactsDir) {
+      try {
+        fs.writeFileSync(path.join(artifactsDir, 'stage1-progress.json'), JSON.stringify({
+          phase: 'phased-plan-error',
+          ts: new Date().toISOString(),
+          error: String(e?.message || e).slice(0, 800),
+        }, null, 2) + '\n', 'utf8');
+      } catch { /* best-effort */ }
+    }
+    log(`!! stage1 phased-plan failed: ${e?.message || e}`);
+    throw e;
+  }
 
   // (4) The Shark-Tank loop to model-side convergence.
-  const loop = await runMasterPlanLoop({
+  const loop = await phased('shark-loop', () => runMasterPlanLoop({
     agent, northStar, criteria,
     draft: renderMasterPlanDraft(plan),
     research, acceptanceCriteria, roundCap, artifactsDir, log,
     sharkRoles: band.sharkRoles,
     statusLog, statusLabel: `Crucible Stage 1 (${band.depth})`,
     routes,
-  });
+  }));
 
   // (5) The user-approval HALT gate (master-plan-approval).
+  live.lastStep = 'approval';
   const approval = approveMasterPlan({ loop, plan, approved, log });
 
   return { brainstorm, triage, plan, loop, approval, band: bandProfileStamp(band) };

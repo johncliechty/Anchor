@@ -168,6 +168,10 @@ export async function runGovernedRound({
   northStar = null,
   priorBlockerIds = [],
   g8 = { enabled: false },
+  // P0 2026-07-25: a TIGHTEN-ONLY band override (LITE triage's includeAdjudication knob).
+  // `false` forces the G9 debate off even where the tier admits it; it can never turn ON
+  // what the tier excludes (the && below), so the governor's cost ceiling is preserved.
+  includeDebate = null,
 } = {}) {
   if (typeof agent !== 'function') {
     throw new HaltError('runGovernedRound requires an agent() function', 'pass the injected seam: { agent }');
@@ -210,7 +214,7 @@ export async function runGovernedRound({
     priorBlockerIds,
     synthesize: policy.synthesize,
     judge: policy.judge,
-    debate: policy.debate,
+    debate: policy.debate && includeDebate !== false,
     g8,
   });
 

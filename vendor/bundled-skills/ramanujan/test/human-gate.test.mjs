@@ -85,7 +85,7 @@ async function observedResultFor(claim) {
 }
 
 /** A canonical out-of-band signer + the matching trusted public keyring. */
-function freshAttestation(keyId = 'human-key-1', attestor = 'example.attestor') {
+function freshAttestation(keyId = 'human-key-1', attestor = 'john.liechty') {
   const { publicKey, privateKey } = generateAssentKeyPair();
   const signer = new AssentSigner({ privateKey, keyId, attestor });
   const keyring = { [keyId]: publicKey };
@@ -137,7 +137,7 @@ test('GWT: a Lean-OBSERVED formalization + a VALID attested assent bound to it r
   assert.equal(r.status, GROUNDED_STATUS.GROUNDED);
   assert.equal(r.ok, true);
   assert.equal(r.family, GROUNDED_FAMILY);
-  assert.equal(r.attestation.attestor, 'example.attestor');
+  assert.equal(r.attestation.attestor, 'john.liechty');
   assert.equal(r.attestation.key_id, 'human-key-1');
   assert.ok(r.artifact_ref); // bound to the lean+z3 OBSERVED artifact
 });
@@ -275,7 +275,7 @@ test('GWT: routeHumanGate lifts a Lean-OBSERVED proof + a valid attested assent 
   assert.equal(r.belief, BELIEF.VERIFIED);
   assert.equal(ledger.rungOf(TRUE_CLAIM.id), GROUNDED_RUNG);
   assert.equal(r.stamp.verifier_family, GROUNDED_FAMILY);
-  assert.ok(r.stamp.human_attestation && r.stamp.human_attestation.attestor === 'example.attestor');
+  assert.ok(r.stamp.human_attestation && r.stamp.human_attestation.attestor === 'john.liechty');
   assert.ok(r.stamp.proof_certifier); // still bound to the lean+z3 artifact
   assert.equal(r.advisory, null); // settled-class apex — no out-of-model route
 });

@@ -27,7 +27,7 @@
 // resolveGate3Seating; same-family → JumperSelfReviewHalt; agy down →
 // JumperCrossFamilyDegradeHalt; JUMPER_GATE3_DRIVER may retarget family never skip independence.
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
@@ -103,7 +103,7 @@ export class JumperDepthFanOutConflictHalt extends Error {
 
 /** @param {string[]} argv */
 export function parseArgs(argv) {
-  const o = { problem: null, input: null, output: null, fanOut: null, depth: null, tier: null, retryOnKill: false };
+  const o = { problem: null, input: null, output: null, fanOut: null, depth: null, tier: null, retryOnKill: false, budget: null, liveRefuter: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--problem') { o.problem = argv[++i]; if (o.problem === undefined) throw new Error('--problem requires text'); }
@@ -113,6 +113,12 @@ export function parseArgs(argv) {
     else if (a === '--depth') { o.depth = argv[++i]; if (o.depth === undefined) throw new Error('--depth requires LITE|SPIKE|FULL'); }
     else if (a === '--tier') { o.tier = argv[++i]; if (o.tier === undefined) throw new Error('--tier requires Heavy|Standard'); }
     else if (a === '--retry-on-kill') { o.retryOnKill = true; }
+    // P1 2026-07-25 (journals 0003/0012): the refuter-budget dial — RefuterBudgetHalt
+    // (elevations > prereg R=3) killed whole tournaments with no CLI override.
+    else if (a === '--budget') { const n = Number(argv[++i]); if (!Number.isInteger(n) || n < 1) throw new Error('--budget requires a positive integer (refuter budget)'); o.budget = n; }
+    // Explicit single-family run: floor elevations to SPECULATIVE without paying for
+    // (or HALTing on) the cross-family refuter lane. Honest — never a fake grant.
+    else if (a === '--no-live-refuter') { o.liveRefuter = false; }
     else if (a === '--help' || a === '-h') { o.help = true; }
     else throw new Error(`unknown argument ${JSON.stringify(a)}`);
   }
@@ -455,8 +461,29 @@ async function main() {
 
   const started = new Date().toISOString();
   const t0 = Date.now();
-  /** @type {{ retryOnKill: boolean, fanOut?: number, killGates?: number }} */
+  /** @type {{ retryOnKill: boolean, fanOut?: number, killGates?: number, refuterBudget?: number, liveRefuter?: boolean, log?: Function }} */
   const runOptions = { retryOnKill: opts.retryOnKill };
+  // P1 2026-07-25: heartbeat sink (stderr keeps stdout's JSON result clean) + the
+  // new dials. Stage lines let a cadence agent tell healthy-long-run from hang
+  // (journal 0014's false-DONE came from exactly this blindness).
+  runOptions.log = (m) => process.stderr.write(`${m}\n`);
+  if (Number.isInteger(opts.budget) && opts.budget > 0) runOptions.refuterBudget = opts.budget;
+  if (opts.liveRefuter === false) runOptions.liveRefuter = false;
+
+  // P1 2026-07-25 (journal 0006): PRE-FLIGHT Gate-3 seating check. JumperSelfReviewHalt
+  // used to fire only inside the kill filter — AFTER ~8 minutes of paid seats on a
+  // single-family host. Resolve the seating now (sub-second, env-only) and refuse
+  // BEFORE any model call. Skipped when the live refuter is explicitly off.
+  if (opts.liveRefuter !== false) {
+    try {
+      resolveGate3Seating({ env: process.env, assertIndependent: true });
+    } catch (err) {
+      process.stderr.write(`jumper-run: HALT (pre-flight) — ${err?.name ?? 'Error'}: ${err?.message ?? err}\n`);
+      process.stderr.write('jumper-run: fix model prefs (coding vs review family) or pass --no-live-refuter for an honest single-family run.\n');
+      process.exitCode = 1;
+      return;
+    }
+  }
 
   // B3 SC1: --depth → sole resolveJumperDepthKnobs (no second local map).
   // --tier does not rebind ideaRounds/killGates (B3-SC1-TIER-INERT).
@@ -540,10 +567,21 @@ async function main() {
   });
 }
 
+// P0 2026-07-25 (journals 0001/0008/0011): realpath + case-fold BOTH sides — a junction path
+// in argv never string-equals the resolved module URL, so the CLI silently exited 0 producing
+// nothing. Same fix as gandalf-run.mjs.
 function invokedDirectly() {
   const entry = process.argv[1];
   if (!entry) return false;
-  try { return resolve(fileURLToPath(import.meta.url)) === resolve(entry); } catch { return false; }
+  try {
+    const canon = (p) => {
+      const abs = resolve(p);
+      let real = abs;
+      try { real = realpathSync(abs); } catch { /* keep abs */ }
+      return process.platform === 'win32' ? real.toLowerCase() : real;
+    };
+    return canon(fileURLToPath(import.meta.url)) === canon(entry);
+  } catch { return false; }
 }
 if (invokedDirectly()) {
   main().catch((err) => {

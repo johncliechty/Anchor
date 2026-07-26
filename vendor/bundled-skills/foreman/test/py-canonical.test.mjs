@@ -76,11 +76,11 @@ test('Phase 3d end-to-end: planted pytest bug is RED then driven GREEN (gate = p
   } finally { cleanup(dir); }
 });
 
-test('Phase 3d: the shipped (unfixed) fixture is a genuine RED under real pytest (green=false, exit 1)', () => {
+test('Phase 3d: the shipped (unfixed) fixture is a genuine RED under real pytest (green=false, exit 1)', async () => {
   const dir = freshCopy();
   const foremanDir = path.join(dir, '.foreman');
   try {
-    const g = runGate({ projectDir: dir, foremanDir, wave: { n: 2 }, iteration: 0, testCommand: PYTEST });
+    const g = await runGate({ projectDir: dir, foremanDir, wave: { n: 2 }, iteration: 0, testCommand: PYTEST });
     assert.equal(g.green, false, 'planted bug => not green');
     assert.equal(g.exit_code, 1, 'real pytest failure exits 1');
     assert.equal(g.vacuous_reason, null, 'a genuine failure is RED, NOT vacuous (keeps the fix-loop path)');
@@ -90,7 +90,7 @@ test('Phase 3d: the shipped (unfixed) fixture is a genuine RED under real pytest
   } finally { cleanup(dir); }
 });
 
-test('Phase 3d: a genuine GREEN pytest run => green=true with correct derived tap (unit, real pytest)', () => {
+test('Phase 3d: a genuine GREEN pytest run => green=true with correct derived tap (unit, real pytest)', async () => {
   const dir = freshCopy();
   const foremanDir = path.join(dir, '.foreman');
   try {
@@ -99,7 +99,7 @@ test('Phase 3d: a genuine GREEN pytest run => green=true with correct derived ta
     const src = fs.readFileSync(calc, 'utf8');
     const i = src.lastIndexOf('return a + b');
     fs.writeFileSync(calc, src.slice(0, i) + 'return a - b' + src.slice(i + 'return a + b'.length));
-    const g = runGate({ projectDir: dir, foremanDir, wave: { n: 2 }, iteration: 1, testCommand: PYTEST });
+    const g = await runGate({ projectDir: dir, foremanDir, wave: { n: 2 }, iteration: 1, testCommand: PYTEST });
     assert.equal(g.green, true, 'all 3 pass => GREEN');
     assert.equal(g.vacuous_reason, null);
     assert.equal(g.tap.tests, 3);
@@ -216,11 +216,11 @@ test('Phase 3d unit — looksLikePytest detects pytest output but NOT node TAP/s
 // "nothing ran" heuristic HALTed it as vacuous with a wrong recommendation
 // instead of routing it to the fix loop.
 
-test('T3 REGRESSION: a genuine pytest RED with a summary but NO per-test events (-q shape) is RED, not vacuous', () => {
+test('T3 REGRESSION: a genuine pytest RED with a summary but NO per-test events (-q shape) is RED, not vacuous', async () => {
   const dir = tmpProjectNoTests();
   try {
     // Synthesize the -q output shape: a real summary banner, zero per-test events, exit 1.
-    const g = runGate({
+    const g = await runGate({
       projectDir: dir, foremanDir: path.join(dir, '.foreman'), wave: { n: 1 }, iteration: 0,
       testCommand: 'cmd /c "echo ==== 34 failed, 40 passed in 2.53s ====& exit 1"',
     });
@@ -233,10 +233,10 @@ test('T3 REGRESSION: a genuine pytest RED with a summary but NO per-test events 
   } finally { cleanup(dir); }
 });
 
-test('T3: pytest output with NO summary and NO events (true nothing-ran) is still vacuous', () => {
+test('T3: pytest output with NO summary and NO events (true nothing-ran) is still vacuous', async () => {
   const dir = tmpProjectNoTests();
   try {
-    const g = runGate({
+    const g = await runGate({
       projectDir: dir, foremanDir: path.join(dir, '.foreman'), wave: { n: 1 }, iteration: 0,
       testCommand: 'cmd /c "echo ==== no tests ran in 0.01s ====& exit 5"',
     });

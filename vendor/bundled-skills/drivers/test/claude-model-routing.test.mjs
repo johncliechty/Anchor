@@ -16,7 +16,13 @@ test('runAgent honors TRIO_DRIVER_<ROLE> env when no explicit driver is passed (
   registerDriver({ name: 'stub-env-verify', runAgent: async (o) => { calls.push(o.role || o.label); return 'env-routed'; } });
   registerDriver({ name: 'stub-explicit', runAgent: async () => 'explicit' });
   const saved = process.env.TRIO_DRIVER_SHARK;
+  const savedReview = process.env.REVIEW_FAMILY;
   process.env.TRIO_DRIVER_SHARK = 'stub-env-verify';
+  // 2026-07-22 order: Anchor family prefs OUTRANK legacy TRIO_DRIVER_<ROLE>. Pin
+  // REVIEW_FAMILY to an unresolvable family so the prefs rung yields null and the
+  // legacy env rung under test is actually reached — hermetic on any host (a real
+  // host pref like review=grok would otherwise dispatch this test to a LIVE CLI).
+  process.env.REVIEW_FAMILY = 'test-unresolvable-family';
   try {
     // role field present
     assert.equal(await runAgent({ prompt: 'p', role: 'shark', label: 'shark:Skeptic:r1' }), 'env-routed');
@@ -28,6 +34,8 @@ test('runAgent honors TRIO_DRIVER_<ROLE> env when no explicit driver is passed (
   } finally {
     if (saved === undefined) delete process.env.TRIO_DRIVER_SHARK;
     else process.env.TRIO_DRIVER_SHARK = saved;
+    if (savedReview === undefined) delete process.env.REVIEW_FAMILY;
+    else process.env.REVIEW_FAMILY = savedReview;
   }
 });
 

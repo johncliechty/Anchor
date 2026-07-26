@@ -208,6 +208,49 @@ export function haltForHuman(reason, pending_action = null) {
 }
 
 /**
+ * P1 2026-07-25 (journal 0063 P0 C-B: "engine must draftToText / refuse short plans").
+ * The CANONICAL draft/plan serializer. `best_draft` HALT payloads are objects
+ * ({draft, roundsRun, openFindings, ...}); launchers that did `String(e.best_draft)`
+ * wrote 15-byte `[object Object]` handoff files across 9+ runs (0038-0062 series),
+ * and the fix lived only in 8 copy-pasted launcher-local copies — any new launcher
+ * reintroduced the bug. One canonical copy, consumers import.
+ */
+export function draftToText(d) {
+  if (d == null) return '';
+  if (typeof d === 'string') return d;
+  if (typeof d === 'object') {
+    if (typeof d.draft === 'string') return d.draft;
+    if (d.draft && typeof d.draft === 'object') return draftToText(d.draft);
+    if (typeof d.markdown === 'string') return d.markdown;
+    if (typeof d.text === 'string') return d.text;
+    if (typeof d.plan === 'string') return d.plan;
+    if (typeof d.content === 'string') return d.content;
+    if (d.best_draft != null) return draftToText(d.best_draft);
+    try { return JSON.stringify(d, null, 2); } catch { return ''; }
+  }
+  return String(d);
+}
+
+/**
+ * Serialize a draft/plan and REFUSE a corrupt or trivially-short result — the
+ * engine-side guard behind draftToText. Returns the clean text or throws a
+ * human-gated HALT (never silently writes `[object Object]` / a stub).
+ */
+export function assertPlanText(d, { minChars = 80, label = 'plan' } = {}) {
+  const t = draftToText(d);
+  const trimmed = t.trim();
+  if (trimmed === '[object Object]' || trimmed.length < minChars) {
+    throw haltForHuman(
+      `refusing to write a corrupt/short ${label} (${trimmed.length} chars` +
+        `${trimmed === '[object Object]' ? '; [object Object] serialization' : ''}) — ` +
+        `the draft payload did not serialize to a real document`,
+      'draft-serialization',
+    );
+  }
+  return t;
+}
+
+/**
  * Build the three-stage state machine.
  * @param {object} [o]
  * @param {string} [o.stage='stage0'] starting stage

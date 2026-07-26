@@ -166,10 +166,39 @@ export function assembleDeliverable({
     verified: true,
     honesty_stamp: null,
     round_history: deriveRoundHistory(rounds),
-    judge_verdict: finalRound?.judgeVerdict ?? null,
+    judge_verdict: engineJudgeVerdict(finalRound),
     convergence_proof: convergence ?? null,
     synthesizer_brief: buildSynthesizerBrief(rounds),
   };
+}
+
+/**
+ * The engine deliverable's judge section. P0 2026-07-25: a GOVERNED run may legitimately
+ * have no Judge verdict — the stakes governor excludes the Judge below the adjudication
+ * floor (crit-2), and the inclusion test skips zero-AXIS rounds entirely (crit-4). Those
+ * are HONEST absences and must be CARRIED as explicit exclusion stamps, not null — so the
+ * output-conformance gate still catches a verdict that is missing for any OTHER reason
+ * (a judge that should have run and didn't stays a contract violation).
+ */
+function engineJudgeVerdict(finalRound) {
+  const jv = finalRound?.judgeVerdict;
+  if (jv != null) return jv;
+  if (finalRound?.skipped === true) {
+    return {
+      excluded: true,
+      by: 'inclusion-test',
+      reason: finalRound.reason ?? 'zero-AXIS-finding round skipped (crit-4) — no adjudication ran',
+    };
+  }
+  if (finalRound?.policy && finalRound.policy.judge === false) {
+    return {
+      excluded: true,
+      by: 'stakes-governor',
+      tier: finalRound.tier ?? null,
+      reason: finalRound.policy.reason ?? 'governor tier below the adjudication floor — Judge excluded (crit-2)',
+    };
+  }
+  return null; // genuinely missing — the conformance gate rejects this, by design
 }
 
 // ── USER SURFACES — researchPrime's three summary levels (pure projections of the deliverable) ────────

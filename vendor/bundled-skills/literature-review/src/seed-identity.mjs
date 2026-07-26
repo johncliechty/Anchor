@@ -58,7 +58,7 @@ let sharedSeedIdentityCache = null;
  * researchPrime's own contract.mjs TRIO_ROOT pin — the Wave-1 decision-receipt rules,
  * same as src/stage0-plan.mjs). Cached after the first call.
  *
- * @returns {Promise<typeof import('<path>')>}
+ * @returns {Promise<typeof import('C:/dev/trio/trio-shared/brownfield-intake/seedIdentity.mjs')>}
  */
 export async function loadSharedSeedIdentity() {
   if (!sharedSeedIdentityCache) {

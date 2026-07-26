@@ -1,4 +1,5 @@
 import zlib from 'node:zlib';
+import { fetchWithBackoff } from './search.mjs';
 
 /**
  * Downloads a PDF from the given URL with a timeout and handles errors.
@@ -200,14 +201,18 @@ function extractTitleFromText(text) {
  * Handles network errors gracefully by returning a generated/fallback ID or null.
  */
 export async function resolveSemanticScholarEntityId(seedUrl, pdfText, options = {}) {
+  // P1 2026-07-25 (journal 0001): these are the FIRST two S2 calls of every run and
+  // they had ZERO retry (bare fetch, silent catch) — a 429 here made the seed
+  // unresolvable and killed the whole run downstream. Route through the shared
+  // fetchWithBackoff (Retry-After + jittered exponential + S2_API_KEY header).
   const customFetch = options.fetch ?? fetch;
   const fetchOptions = options.fetchOptions ?? {};
-  
+
   // 1. Try URL Lookup
   try {
     const encodedUrl = encodeURIComponent(seedUrl);
     const urlLookupEndpoint = `https://api.semanticscholar.org/graph/v1/paper/URL:${encodedUrl}`;
-    const res = await customFetch(urlLookupEndpoint, fetchOptions);
+    const res = await fetchWithBackoff(urlLookupEndpoint, { ...options, fetch: customFetch, fetchOptions });
     if (res.ok) {
       const data = await res.json();
       if (data && data.paperId) {
@@ -215,7 +220,7 @@ export async function resolveSemanticScholarEntityId(seedUrl, pdfText, options =
       }
     }
   } catch (err) {
-    // Gracefully fallback on network/parsing issues
+    // Gracefully fallback on network/parsing issues (after real retries)
   }
 
   // 2. Try Title Search
@@ -223,7 +228,7 @@ export async function resolveSemanticScholarEntityId(seedUrl, pdfText, options =
   if (title) {
     try {
       const searchEndpoint = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(title)}&limit=1`;
-      const res = await customFetch(searchEndpoint, fetchOptions);
+      const res = await fetchWithBackoff(searchEndpoint, { ...options, fetch: customFetch, fetchOptions });
       if (res.ok) {
         const data = await res.json();
         if (data && data.data && data.data[0] && data.data[0].paperId) {
@@ -231,7 +236,7 @@ export async function resolveSemanticScholarEntityId(seedUrl, pdfText, options =
         }
       }
     } catch (err) {
-      // Gracefully fallback on network/parsing issues
+      // Gracefully fallback on network/parsing issues (after real retries)
     }
   }
 

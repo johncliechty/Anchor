@@ -131,6 +131,23 @@ test('runHost degrades a canary-tripping draft (over-cap nitpicks) to a conforma
   assert.ok(out.nitpicks.length <= 7, 'the over-cap nitpicks are trimmed under the pre-registered cap');
 });
 
+test('P0 2026-07-25 (0277 canary): a degraded run PRESERVES the forward layer — one offending item is sacrificed, never all elevations+nitpicks', () => {
+  // Journals 0276/0277: the old salvage ladder dropped the ENTIRE elevations+nitpicks
+  // layer as step 1 (deterministic, byte-identical) — the expensive --live path returned
+  // strictly less advice than the cheap one. The inverted ladder drops the single
+  // offending item and keeps every other finding, elevation, and nitpick.
+  const d = baseDraft({
+    findings: [{ id: 'd-1', kind: 'diagnose', rung: 'OBSERVED', severity: 'minor', reasoning: 'x', verdict: 'y' }],
+    elevations: [{ reasoning: 'adopt pattern Y from field X' }, { reasoning: 'adopt pattern Z from field W' }],
+    nitpicks: Array.from({ length: 8 }, (_, i) => ({ id: `n-${i}`, rung: 'CLAIMED', reasoning: 'x', verdict: 'y' })), // 8 > cap 7
+  });
+  const out = runHost(JSON.stringify(d), { cross_model: true });
+  assert.equal(out.degraded, true, 'the salvage is honestly stamped degraded');
+  assert.equal(out.findings.length, 1, 'findings preserved');
+  assert.equal(out.elevations.length, 2, 'elevations must SURVIVE an unrelated canary trip (elevation count preserved)');
+  assert.equal(out.nitpicks.length, 7, 'exactly the single over-cap nitpick is sacrificed, not the whole leg (nitpick count preserved)');
+});
+
 test('runHost keeps a clean draft clean (no false degradation)', () => {
   const d = baseDraft({ findings: [
     { id: 'd-1', kind: 'diagnose', rung: 'OBSERVED', severity: 'major', reasoning: 'x', verdict: 'y' },

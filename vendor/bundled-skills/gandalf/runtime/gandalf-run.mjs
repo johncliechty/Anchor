@@ -18,7 +18,7 @@
 // with an honest stderr reason and writes NOTHING (no partial / no forged output). It NEVER fabricates
 // a finding to make the gate pass — that would defeat the entire anti-illusion spine.
 
-import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, realpathSync } from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { resolve, relative, join, dirname } from 'node:path';
@@ -215,8 +215,9 @@ function tryGrade(draft, cross_model, resolveCommission) {
  *  field / provenance rule. We never emit anything the canary rejects (every returned output is
  *  re-asserted); we simply refuse to lose the WHOLE read over one item. The output is honestly stamped
  *  `degraded:true` with a note; the per-shard reasoning narrative is preserved regardless of which
- *  structured items are dropped. Order of sacrifice: nitpicks+elevations first (lowest value), then a
- *  single offending finding, then a shrinking finding prefix, then the minimal (findings-empty) form. */
+ *  structured items are dropped. Order of sacrifice (P0 2026-07-25): a SINGLE offending item first
+ *  (preserving every other finding/elevation/nitpick), then a tail-shrink of one forward leg, then
+ *  whole legs in increasing-value order, then finding subsets, then the minimal (empty-arrays) form. */
 function degradeToConformant(rawDraft, { cross_model, resolveCommission, reason }) {
   const firstLine = String(reason || 'conformance failure').split('\n')[0];
   const note =
@@ -224,16 +225,44 @@ function degradeToConformant(rawDraft, { cross_model, resolveCommission, reason 
     `the read was salvaged to the largest conformant subset (the reasoning narrative above is intact).`;
   const base = { ...rawDraft, reasoning: String(rawDraft.reasoning || '') + note, degraded: true };
   const findings = Array.isArray(base.findings) ? base.findings.slice() : [];
+  const nitpicks = Array.isArray(base.nitpicks) ? base.nitpicks.slice() : [];
+  const elevations = Array.isArray(base.elevations) ? base.elevations.slice() : [];
 
-  // 1) drop the low-value legs, keep every finding
-  let out = tryGrade({ ...base, nitpicks: [], elevations: [] }, cross_model, resolveCommission);
+  // 1) P0 2026-07-25 (journals 0276/0277): the common case is ONE offending item —
+  //    drop just IT and preserve every other finding, elevation, and nitpick. The old
+  //    ladder sacrificed the ENTIRE elevations+nitpicks forward layer as its FIRST step,
+  //    which almost always conformed — so any single canary trip silently cost the whole
+  //    recommendation layer (deterministic, byte-identical, observed live twice on
+  //    --live runs; the expensive path returned strictly less advice than the cheap one).
+  let out;
+  for (const [legName, leg] of [['nitpicks', nitpicks], ['elevations', elevations], ['findings', findings]]) {
+    for (let i = 0; i < leg.length; i++) {
+      out = tryGrade({ ...base, [legName]: leg.filter((_, j) => j !== i) }, cross_model, resolveCommission);
+      if (out) return out;
+    }
+  }
+  // 1b) multiple offenders in ONE forward leg (e.g. an over-cap overrun by >1): shrink
+  //     that leg from the tail while keeping the other legs whole.
+  for (const [legName, leg] of [['nitpicks', nitpicks], ['elevations', elevations]]) {
+    for (let keep = leg.length - 2; keep >= 0; keep--) {
+      out = tryGrade({ ...base, [legName]: leg.slice(0, keep) }, cross_model, resolveCommission);
+      if (out) return out;
+    }
+  }
+  // 2) cross-leg offenders: drop whole legs in INCREASING-value order — nitpicks, then
+  //    elevations, then both. (This was the old step 1; it is now a late resort.)
+  out = tryGrade({ ...base, nitpicks: [] }, cross_model, resolveCommission);
   if (out) return out;
-  // 2) the common case — exactly ONE offending finding; keep the other n-1
+  out = tryGrade({ ...base, elevations: [] }, cross_model, resolveCommission);
+  if (out) return out;
+  out = tryGrade({ ...base, nitpicks: [], elevations: [] }, cross_model, resolveCommission);
+  if (out) return out;
+  // 3) the offending FINDING cases (with the forward legs already sacrificed):
+  //    single offender, then a shrinking prefix (multiple/interacting offenders).
   for (let i = 0; i < findings.length; i++) {
     out = tryGrade({ ...base, findings: findings.filter((_, j) => j !== i), nitpicks: [], elevations: [] }, cross_model, resolveCommission);
     if (out) return out;
   }
-  // 3) shrink a finding prefix (handles multiple/interacting offenders)
   for (let keep = findings.length - 1; keep >= 0; keep--) {
     out = tryGrade({ ...base, findings: findings.slice(0, keep), nitpicks: [], elevations: [] }, cross_model, resolveCommission);
     if (out) return out;
@@ -658,7 +687,10 @@ async function main() {
     tier: opts.live ? 'live-cross-family' : 'tier1-deterministic',
     started, ended: new Date().toISOString(),
     input: opts.input || '(stdin)',
-    params: { live: opts.live, budget: opts.budget, cross_model_intent: opts.cross_model },
+    // P0 2026-07-25 (journal 0276): --live hardcodes cross_model:true into runHostLive, so the
+    // intent stamp must reflect it — recording opts.cross_model alone stamped intent:false on
+    // every --live run, corrupting the training feed for the highest-value runs.
+    params: { live: opts.live, budget: opts.budget, cross_model_intent: !!(opts.live || opts.cross_model) },
     output: opts.output || '(stdout)',
     result: `graded: ${Array.isArray(output?.elevations) ? output.elevations.length : 0} elevation(s)` +
       (dispatch ? `; refuters ${dispatch.length}, minted ${dispatch.filter((d) => d.minted).length}` : ''),
@@ -670,13 +702,22 @@ async function main() {
 }
 
 // Run as a CLI when invoked directly (node runtime/gandalf-run.mjs). Importable for tests otherwise.
-// Resolve both sides to an absolute path so the check is robust across OSes (Windows file:/// URLs +
-// relative argv vs. the absolute module URL).
+// P0 2026-07-25 (journals 0275/0281/0283 + 0001-heavy-smoke): realpath + case-fold BOTH sides —
+// a junction/symlink path in argv (e.g. ~/.claude/skills junctions) never string-equals the
+// resolved module URL, so the CLI silently exited 0 writing NOTHING (the worst failure mode
+// for an honesty-first host). realpathSync collapses junctions; toLowerCase absorbs Windows
+// drive-letter/case variants.
 function invokedDirectly() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return resolve(fileURLToPath(import.meta.url)) === resolve(entry);
+    const canon = (p) => {
+      const abs = resolve(p);
+      let real = abs;
+      try { real = realpathSync(abs); } catch { /* keep abs (file may be a virtual path) */ }
+      return process.platform === 'win32' ? real.toLowerCase() : real;
+    };
+    return canon(fileURLToPath(import.meta.url)) === canon(entry);
   } catch {
     return false;
   }

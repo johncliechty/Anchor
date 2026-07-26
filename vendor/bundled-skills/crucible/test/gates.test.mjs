@@ -197,19 +197,43 @@ test('convergence gate: an unresolved MAJOR drift flag holds the loop; a resolve
   assert.equal(ok.verdict, 'AWAITING_APPROVAL');
 });
 
-test('convergence gate (T7): fresh-eyes is advisory-unless-BLOCKER — a named BLOCKER concern holds, a bare lean does not', () => {
-  // A concrete BLOCKER-severity concern HOLDS the lock (fresh-eyes retains real teeth).
+test('convergence gate (T7 + 0011 item 4): fresh-eyes BLOCKER holds ONLY when accountable (criterion or Shark corroboration)', () => {
+  // A BLOCKER that NAMES the North-Star criterion it blocks HOLDS the lock
+  // (fresh-eyes retains real teeth — when accountable).
   const holds = evaluateConvergenceGate({
+    tally: { dry: true },
+    judgeVerdict: { lockable: true, decision: 'CONVERGED' },
+    freshEyes: { lean: 'not-lockable', concerns: [
+      { severity: 'BLOCKER', criterion: 'crit-3: phase-2 build must not depend on unbuilt APIs', note: 'phase 2 depends on an unbuilt API' },
+    ] },
+  });
+  assert.equal(holds.modelSideLockable, false);
+  assert.match(holds.reasons.join(' '), /accountable BLOCKER concern/);
+
+  // A BLOCKER corroborated by a non-demoted Shark finding on the same topic also holds.
+  const corroborated = evaluateConvergenceGate({
+    tally: { dry: true, findings: [{ topic: 'unbuilt api dependency', demoted: false }] },
+    judgeVerdict: { lockable: true, decision: 'CONVERGED' },
+    freshEyes: { lean: 'not-lockable', concerns: [
+      { severity: 'BLOCKER', topic: 'Unbuilt API dependency', note: 'same hole the Sharks saw' },
+    ] },
+  });
+  assert.equal(corroborated.modelSideLockable, false);
+
+  // P1 2026-07-25 (0011 item 4): a BLOCKER with NO criterion and NO Shark
+  // corroboration is one unaccountable persona outvoting a fully dry 3-Shark tank —
+  // the mechanism behind the 0046/0049/0052/0055/0060 cap-burn series. It is now
+  // ADVISORY: recorded loudly for the Judge and the human, never a veto.
+  const unaccountable = evaluateConvergenceGate({
     tally: { dry: true },
     judgeVerdict: { lockable: true, decision: 'CONVERGED' },
     freshEyes: { lean: 'not-lockable', concerns: [{ severity: 'BLOCKER', note: 'phase 2 depends on an unbuilt API' }] },
   });
-  assert.equal(holds.modelSideLockable, false);
-  assert.match(holds.reasons.join(' '), /BLOCKER concern/);
+  assert.equal(unaccountable.modelSideLockable, true, 'an unaccountable single-persona BLOCKER cannot veto a dry tank + converged Judge');
+  assert.equal(unaccountable.verdict, 'AWAITING_APPROVAL', 'the user still gates the lock');
+  assert.match(unaccountable.reasons.join(' '), /name no North-Star criterion and match no Shark finding/, 'the downgrade is recorded, not lost');
 
-  // A bare non-lockable lean with NO named BLOCKER is ADVISORY — the old 3-of-3
-  // unanimity produced the observed live oscillation (22→17→20 over 4 dry rounds,
-  // ~30 calls into the cap). Dry + Judge decide; the user stays the final authority.
+  // A bare non-lockable lean with NO named BLOCKER stays ADVISORY (T7 unchanged).
   const advisory = evaluateConvergenceGate({
     tally: { dry: true },
     judgeVerdict: { lockable: true, decision: 'CONVERGED' },

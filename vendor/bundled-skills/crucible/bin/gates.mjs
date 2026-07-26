@@ -173,10 +173,36 @@ export function evaluateConvergenceGate({
   const freshBlockingConcerns = (freshEyes && freshEyes.lean !== 'lockable' && Array.isArray(freshEyes.concerns))
     ? freshEyes.concerns.filter((c) => c && typeof c === 'object' && /^blocker$/i.test(String(c.severity ?? '')))
     : [];
-  const freshHolds = freshBlockingConcerns.length > 0;
+  // P1 2026-07-25 (journal 0011 item 4 — never actioned, then 0012/0046/0047-b3/0049/
+  // 0052/0055/0060/0061/0067 all burned their caps on it): ONE cold-pass persona's
+  // BLOCKER label was an unappealable veto outvoting a fully dry 3-Shark tank. A
+  // BLOCKER concern now holds the lock only when ACCOUNTABLE: it names the North-Star
+  // criterion it blocks (criterion), or its topic is corroborated by a non-demoted
+  // Shark finding in this round's tally. An unaccountable BLOCKER is recorded as
+  // advisory for the Judge and the human — the ≥2-agree Shark bar, the Judge, and the
+  // user gate are untouched (this only downgrades a single unaccountable persona).
+  const normTopic = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const tallyTopics = new Set(
+    (Array.isArray(tally?.findings) ? tally.findings : [])
+      .filter((f) => f && !f.demoted)
+      .flatMap((f) => [normTopic(f.topic), normTopic(f.id), normTopic(f.claim_id)])
+      .filter(Boolean),
+  );
+  const isAccountable = (c) => {
+    if (typeof c.criterion === 'string' && c.criterion.trim()) return true;
+    const t = normTopic(c.topic ?? c.claim_id ?? c.id);
+    return !!t && tallyTopics.has(t);
+  };
+  const accountableBlockers = freshBlockingConcerns.filter(isAccountable);
+  const advisoryBlockers = freshBlockingConcerns.filter((c) => !isAccountable(c));
+  const freshHolds = accountableBlockers.length > 0;
   if (freshHolds) {
-    reasons.push(`fresh-eyes pass raises ${freshBlockingConcerns.length} BLOCKER concern(s) (lean=${freshEyes?.lean ?? '?'})`);
-  } else if (freshEyes && freshEyes.lean !== 'lockable') {
+    reasons.push(`fresh-eyes pass raises ${accountableBlockers.length} accountable BLOCKER concern(s) (lean=${freshEyes?.lean ?? '?'})`);
+  }
+  if (advisoryBlockers.length) {
+    reasons.push(`advisory: ${advisoryBlockers.length} fresh-eyes BLOCKER concern(s) name no North-Star criterion and match no Shark finding — recorded for the Judge and the human, not a veto (0011 item 4)`);
+  }
+  if (!freshHolds && !advisoryBlockers.length && freshEyes && freshEyes.lean !== 'lockable') {
     reasons.push(`advisory: fresh-eyes lean=${freshEyes?.lean ?? '?'} with no BLOCKER concern — recorded, not a veto`);
   }
 

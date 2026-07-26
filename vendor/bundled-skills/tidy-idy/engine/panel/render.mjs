@@ -402,9 +402,19 @@ document.querySelectorAll('.sect-body, .folder-set').forEach((root) => {
 });
 
 document.getElementById('close-release').addEventListener('click', async () => {
-  if (TOKEN_USABLE) await post('/api/close', {}).catch(() => {});
-  document.body.classList.add('closed');
-  say('panel closed — the project lock has been released');
+  // P1 2026-07-25 (MAJOR dead-token-close-must-not-claim-lock-released): only claim a
+  // release that actually happened. A dead token never called /api/close, and a failed
+  // call proves nothing — saying "released" either way was a false safety claim.
+  if (TOKEN_USABLE) {
+    const r = await post('/api/close', {}).catch(() => null);
+    document.body.classList.add('closed');
+    say(r && r.status >= 200 && r.status < 300
+      ? 'panel closed — the project lock has been released'
+      : 'panel closed — lock release NOT confirmed (server unreachable); the lock may still be held until the server exits');
+  } else {
+    document.body.classList.add('closed');
+    say('panel closed — this token is expired, so the lock was NOT released from here; re-open the panel (fresh link) to release it, or stop the panel server');
+  }
 });
 
 window.addEventListener('pagehide', () => { /* beats stop; the server reclaims */ });

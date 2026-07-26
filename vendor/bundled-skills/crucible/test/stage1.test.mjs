@@ -39,6 +39,7 @@ import {
   runStage1,
   reviseDraft,
   REVISE_MARKDOWN_BYTES,
+  detectDraftCorruption,
 } from '../bin/stage1.mjs';
 
 const NORTH_STAR = 'STAGE1-NS-SENTINEL: ship a vetted, Foreman-ready plan that never drifts.';
@@ -401,7 +402,8 @@ test('reviseDraft goes MARKDOWN-FIRST for a large draft (EI1: schema-less, full-
   assert.ok(seenOpts && seenOpts.schema === undefined, 'a large draft must be revised schema-LESS (markdown-first, no fragile large-JSON serialization)');
   assert.equal(out.draft, revisedBody);
   assert.equal(out.changelog.length, 1);
-  assert.match(out.changelog[0], /markdown-first/i);
+  // Search/replace rework: a whole-draft fenced reply is recovered via the explicit fallback.
+  assert.match(out.changelog[0], /fell back to parsing whole draft/i);
 });
 
 test('reviseDraft completeness guard: a markdown-first PARTIAL/delta is REJECTED and the prior draft kept (EI1 guard)', async () => {
@@ -425,4 +427,58 @@ test('reviseDraft dead-seam reply (null / empty) keeps the prior draft — a rou
     assert.equal(out.draft, 'OLD-DRAFT');
     assert.deepEqual(out.changelog, []);
   }
+});
+
+// ---------------------------------------------------------------------------
+// journal 0013 — `$`-pattern splice corruption. String.replace expands $`, $',
+// $& in the REPLACEMENT string; a `$` in model output spliced the whole prior
+// document into itself (~3 interleaved copies). The patch application must be
+// literal (function replacement), and a corrupted revision must be rejected.
+// ---------------------------------------------------------------------------
+
+test('reviseDraft search/replace applies $-containing replacement LITERALLY (0013: no $`/$\' document splice)', async () => {
+  const filler = 'x'.repeat(REVISE_MARKDOWN_BYTES);
+  const bigDraft = '# Big Plan\n' + filler + '\nTARGET LINE\ntail-of-plan';
+  const replacement = 'price is $100 and context: $` plus $\' and $& stay literal';
+  const agent = async () => '<<<<\nTARGET LINE\n====\n' + replacement + '\n>>>>';
+  const out = await reviseDraft({ agent, northStar: NORTH_STAR, draft: bigDraft, verdict: { blockers: [] }, direction: null, round: 6 });
+  assert.ok(out.draft.includes(replacement), 'the replacement text must land verbatim — $-patterns must NOT be expanded');
+  assert.equal(out.draft.length, bigDraft.length - 'TARGET LINE'.length + replacement.length, 'draft length must reflect a literal single-line swap, not a document splice');
+});
+
+test('reviseDraft rejects a revision that interleaves a second copy of the plan (0013 structural guard)', async () => {
+  const bigDraft = '# Big Plan\n' + 'x'.repeat(REVISE_MARKDOWN_BYTES) + '\nTARGET LINE\ntail-of-plan';
+  // A patch that (however it happened) duplicates the top-level heading = the splice signature.
+  const agent = async () => '<<<<\nTARGET LINE\n====\ninterleaved:\n# Big Plan\nsecond copy begins\n>>>>';
+  const out = await reviseDraft({ agent, northStar: NORTH_STAR, draft: bigDraft, verdict: { blockers: [] }, direction: null, round: 7 });
+  assert.equal(out.draft, bigDraft, 'a revision carrying a duplicated H1 (splice signature) must be REJECTED — prior draft kept');
+  assert.deepEqual(out.changelog, []);
+});
+
+test('P1 2026-07-25 (0040): revise path is chosen by band/family/delta — LITE, grok, and <=2-finding rounds go markdown-first at ANY size', async () => {
+  const smallDraft = '# Small Plan\nBody under the byte threshold.';
+  const seen = [];
+  const agent = async (_p, opts) => { seen.push(opts); return null; }; // dead reply keeps prior draft
+  // LITE forces the schema-less path even for a tiny draft (LITE drafts run 8-17KB
+  // and always sat under the byte threshold → fragile JSON → paid 0-change rounds).
+  await reviseDraft({ agent, northStar: NORTH_STAR, draft: smallDraft, verdict: { blockers: Array(5).fill({ id: 'b' }) }, direction: null, round: 1, depth: 'LITE' });
+  assert.equal(seen[0].schema, undefined, 'LITE must revise schema-LESS (markdown-first)');
+  // grok family likewise (its seats parse structured JSON worst).
+  await reviseDraft({ agent, northStar: NORTH_STAR, draft: smallDraft, verdict: { blockers: Array(5).fill({ id: 'b' }) }, direction: null, round: 2, family: 'grok' });
+  assert.equal(seen[1].schema, undefined, 'grok family must revise schema-LESS');
+  // <=2 blocking findings takes the search/replace PATCH path regardless of size
+  // (0068: an 8.5-minute full re-emit produced "1 change(s)").
+  await reviseDraft({ agent, northStar: NORTH_STAR, draft: smallDraft, verdict: { blockers: [{ id: 'b1' }] }, direction: null, round: 3 });
+  assert.equal(seen[2].schema, undefined, 'a small-delta round must take the patch path');
+  // Baseline unchanged: FULL band, many findings, small draft stays schema-first.
+  await reviseDraft({ agent, northStar: NORTH_STAR, draft: smallDraft, verdict: { blockers: Array(5).fill({ id: 'b' }) }, direction: null, round: 4 });
+  assert.ok(seen[3].schema, 'the schema-first contract survives where it works (FULL band, multi-finding, small draft)');
+});
+
+test('detectDraftCorruption: repeated H1 and leftover patch markers detected; clean drafts pass', () => {
+  assert.equal(detectDraftCorruption('# Plan\n## Phase 1\nbody\n## Phase 2\nbody'), null);
+  assert.match(String(detectDraftCorruption('# Plan\nbody\n# Plan\nbody again')), /repeated 2x/);
+  assert.match(String(detectDraftCorruption('# Plan\n<<<<\nleftover')), /block markers/);
+  // Setext underlines (===) are legal markdown and must NOT trip the marker check.
+  assert.equal(detectDraftCorruption('Title\n====\nbody paragraph'), null);
 });

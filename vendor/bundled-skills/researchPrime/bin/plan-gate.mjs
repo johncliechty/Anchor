@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import { runTwoGateMachine } from './two-gate.mjs';
 import { runPhase1 } from './phase1.mjs';
+import { deriveGovernorContract } from './formal-governor.mjs';
 import { HaltError } from './trio-core/contract-core.mjs';
 
 export const RESEARCH_PLAN_VERSION = 'researchPrime-phase1/1';
@@ -56,11 +57,25 @@ export function buildResearchPlan({ inputs } = {}) {
 /**
  * Run the two-gate human approval with the REAL Phase-1 plan at Gate 2.
  * Thin wrapper over runTwoGateMachine that injects `buildResearchPlan`.
+ *
+ * P0 2026-07-25 (journal 0004): the governance record now locks the REAL governor
+ * contract (thresholds/tier/roundBudget via deriveGovernorContract), not the two-gate
+ * `{hash:'mock-hash'}` placeholder — the placeholder short-circuited run-rounds'
+ * `lockedGovernorOutput ||` and crashed at `thresholds.N`, breaking the documented
+ * plan-gate → run-rounds happy path end-to-end. `provenance.inputsHash` mirrors to
+ * `.hash` to satisfy the governance-record validator. An explicitly-passed
+ * `opts.lockedGovernorOutput` still wins (tests / callers with their own lock).
+ *
  * @param {object} inputs frozen Phase-1 inputs (see buildResearchPlan)
  * @param {object} opts   forwarded to runTwoGateMachine (runDir, prompts, approvalProvider, …)
  */
 export async function runPlanReviewGate(inputs, opts = {}) {
-  return runTwoGateMachine(inputs, { ...opts, buildPlan: buildResearchPlan });
+  let lockedGovernorOutput = opts.lockedGovernorOutput;
+  if (!lockedGovernorOutput) {
+    const contract = deriveGovernorContract(inputs);
+    lockedGovernorOutput = { ...contract, hash: contract.provenance.inputsHash };
+  }
+  return runTwoGateMachine(inputs, { ...opts, lockedGovernorOutput, buildPlan: buildResearchPlan });
 }
 
 // ---------------------------------------------------------------------------

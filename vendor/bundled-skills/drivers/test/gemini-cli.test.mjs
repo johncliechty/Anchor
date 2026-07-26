@@ -243,6 +243,11 @@ test('runAgent(gemini-cli) + schema: unparseable twice -> ABSTAIN (answerable:no
   });
   assert.equal(calls, 2, 'initial + one retry, then abstain (no infinite retry)');
   assert.equal(out.answerable, 'no');
+  // P0 2026-07-25 (foreman journals 0080/0081): an unparseable reply is a TRANSPORT
+  // failure — the marker lets Foreman's T10a degrade path drop the seat instead of
+  // firing a hard [taxonomy:ambiguity] HALT, while answerable:'no' still keeps the
+  // Crucible shark quorum honest (an unparsed shark is NOT an answered shark).
+  assert.equal(out.transport_failed, true, 'unparseable-after-retry must carry transport_failed:true');
   assert.deepEqual(out.findings, []);
   assert.match(out.note, /not parseable/i);
 });

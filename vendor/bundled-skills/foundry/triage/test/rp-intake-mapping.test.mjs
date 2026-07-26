@@ -242,7 +242,7 @@ test('governance.mjs byte-identity vs Wave-5 baseline pin (diff assert)', () => 
 
   const livePaths = [
     '<path>',
-    'C:\\Users\\example\\.claude\\skills\\researchprime\\bin\\governance.mjs',
+    'C:\\Users\\john\\.claude\\skills\\researchprime\\bin\\governance.mjs',
   ];
   let checked = 0;
   for (const p of livePaths) {
@@ -270,7 +270,7 @@ test('Wave-5 sources never import governance.mjs (intake-only contract)', () => 
   // Live intake must import the wire and must not import governance.
   const intakeCandidates = [
     '<path>',
-    'C:\\Users\\example\\.claude\\skills\\researchprime\\bin\\intake.mjs',
+    'C:\\Users\\john\\.claude\\skills\\researchprime\\bin\\intake.mjs',
   ];
   let checked = 0;
   for (const p of intakeCandidates) {

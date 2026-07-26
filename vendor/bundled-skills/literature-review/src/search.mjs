@@ -83,15 +83,35 @@ export function rankCandidates(candidates, whitelist) {
 
 /**
  * Retries a request with exponential backoff on rate limits (429) or server errors (>= 500).
+ *
+ * P1 2026-07-25 (journal 0001 — the skill's ONLY real run failed on a hard S2 429):
+ * the old defaults (maxRetries 3, backoffFactor 50ms → ~0.7s TOTAL budget) were a
+ * unit-test constant shipped as production; against Semantic Scholar's shared
+ * unauthenticated pool (minute-scale windows) they exhausted in under a second.
+ * Now: `Retry-After` is honored when the server sends it; the default base is 1s
+ * with full jitter and a 60s per-wait cap; and `S2_API_KEY` (env) is sent as
+ * `x-api-key` so a keyed operator gets the authenticated pool. Injectable
+ * `sleep`/`fetch` keep tests fast (tests pass a tiny backoffFactor explicitly).
  */
+export const DEFAULT_BACKOFF_MS = 1000;
+export const MAX_BACKOFF_WAIT_MS = 60_000;
+
+export function s2Headers(env = process.env) {
+  const key = env && typeof env.S2_API_KEY === 'string' ? env.S2_API_KEY.trim() : '';
+  return key ? { 'x-api-key': key } : {};
+}
+
 async function fetchWithBackoff(url, options = {}) {
   const customFetch = options.fetch || fetch;
-  const fetchOptions = options.fetchOptions || {};
+  const fetchOptions = { ...(options.fetchOptions || {}) };
+  fetchOptions.headers = { ...s2Headers(options.env), ...(fetchOptions.headers || {}) };
   const maxRetries = options.maxRetries ?? 3;
-  const backoffFactor = options.backoffFactor ?? 50; // ms
+  const backoffFactor = options.backoffFactor ?? DEFAULT_BACKOFF_MS; // ms
+  const sleep = options.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
 
   let attempt = 0;
   while (true) {
+    let retryAfterMs = null;
     try {
       const response = await customFetch(url, fetchOptions);
       if (response.ok) {
@@ -101,6 +121,16 @@ async function fetchWithBackoff(url, options = {}) {
       if (response.status === 429 || response.status >= 500) {
         if (attempt >= maxRetries) {
           throw new Error(`HTTP error ${response.status} ${response.statusText} after ${maxRetries} retries`);
+        }
+        // Honor the server's own instruction when present (seconds or HTTP-date).
+        const ra = response.headers?.get?.('retry-after');
+        if (ra != null && ra !== '') {
+          const secs = Number(ra);
+          if (Number.isFinite(secs) && secs >= 0) retryAfterMs = secs * 1000;
+          else {
+            const when = Date.parse(ra);
+            if (Number.isFinite(when)) retryAfterMs = Math.max(0, when - Date.now());
+          }
         }
       } else {
         throw new Error(`HTTP error ${response.status} ${response.statusText}`);
@@ -112,10 +142,15 @@ async function fetchWithBackoff(url, options = {}) {
     }
 
     attempt++;
-    const delay = backoffFactor * Math.pow(2, attempt);
-    await new Promise((resolve) => setTimeout(resolve, delay));
+    // Full jitter over the exponential step; Retry-After (when sent) is the floor.
+    const step = backoffFactor * Math.pow(2, attempt);
+    const jittered = Math.random() * step;
+    const delay = Math.min(Math.max(retryAfterMs ?? 0, jittered), MAX_BACKOFF_WAIT_MS);
+    await sleep(delay);
   }
 }
+
+export { fetchWithBackoff };
 
 /**
  * Evaluates a candidate paper against filters, returning { excluded: boolean, reason: string, details: string }.
@@ -210,6 +245,7 @@ export async function performSnowballSearch(seedEntityId, venueWhitelist, option
   const edges = [];
   const visited = new Set();
   const queue = [];
+  const fetchFailures = []; // P1 2026-07-25: honest record of truncated expansions
 
   // Fetch seed paper details first
   try {
@@ -270,7 +306,16 @@ export async function performSnowballSearch(seedEntityId, venueWhitelist, option
         }
       }
     } catch (err) {
-      // Gracefully handle query failures by proceeding with whatever we have.
+      // P1 2026-07-25 (journal 0001): a mid-walk fetch failure used to be SWALLOWED
+      // SILENTLY — a rate-limited run quietly truncated the citation graph with no
+      // stamp anywhere ("each stage honest about what ran" was false for the evidence
+      // base itself). The walk still proceeds with what it has, but the loss is now
+      // RECORDED: a PRISMA `fetch-failed` exclusion entry per failed expansion.
+      fetchFailures.push({
+        paperId,
+        title: (allPapers.get(paperId)?.title) || 'Untitled',
+        error: String(err?.message || err).slice(0, 300),
+      });
     }
   }
 
@@ -278,6 +323,15 @@ export async function performSnowballSearch(seedEntityId, venueWhitelist, option
   const nodes = [];
   const exclusions = [];
   const candidates = [];
+
+  for (const f of fetchFailures) {
+    exclusions.push({
+      paperId: f.paperId,
+      title: f.title,
+      reason: 'fetch-failed',
+      details: `reference expansion failed (${f.error}) — this paper's outgoing citations are MISSING from the graph (evidence base truncated here)`,
+    });
+  }
 
   for (const [id, paper] of allPapers.entries()) {
     const isSeed = id === seedEntityId;
@@ -326,6 +380,8 @@ export async function performSnowballSearch(seedEntityId, venueWhitelist, option
     graph: { nodes, edges },
     prismaExclusions,
     candidates: rankedCandidates,
-    mermaid
+    mermaid,
+    // P1 2026-07-25: non-empty ⇒ the evidence base is TRUNCATED (stamped, never silent).
+    fetchFailures,
   };
 }

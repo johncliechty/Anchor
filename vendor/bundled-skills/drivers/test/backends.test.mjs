@@ -159,6 +159,7 @@ for (const c of CASES) {
     });
     assert.equal(capture.calls.length, 2, 'initial + one retry, then abstain (no infinite retry)');
     assert.equal(out.answerable, 'no');
+    assert.equal(out.transport_failed, true, 'unparseable-after-retry must carry transport_failed:true (degradable, not a hard ambiguity HALT)');
     assert.deepEqual(out.findings, []);
     assert.match(out.note, /not parseable/i);
   });

@@ -57,6 +57,12 @@ export const FRESH_EYES_SCHEMA = {
         type: 'object',
         properties: {
           severity: { enum: ['BLOCKER', 'MAJOR', 'MINOR', 'NIT'] },
+          // P1 2026-07-25 (journal 0011 item 4): a BLOCKER concern holds the lock
+          // ONLY when accountable — it must name the North-Star criterion it blocks
+          // (criterion) or share a topic with a Shark finding (corroboration). A
+          // bare-vibe BLOCKER is advisory for the Judge and the human, not a veto.
+          criterion: { type: 'string' },
+          topic: { type: 'string' },
           note: { type: 'string' },
         },
       },
@@ -113,7 +119,10 @@ function freshEyesPrompt({ northStar, transcripts }) {
     typeof transcripts === 'string' ? transcripts : JSON.stringify(transcripts, null, 2),
     `=== END TRANSCRIPTS ===`,
     ``,
-    `Emit: lean (lockable|not-lockable|unknown), concerns [{severity, note}], note.`,
+    `Emit: lean (lockable|not-lockable|unknown), concerns [{severity, criterion, topic, note}], note.`,
+    `For a BLOCKER concern: criterion MUST name the North-Star criterion it blocks (verbatim`,
+    `or by number) and topic MUST be a short stable slug for the issue — a BLOCKER that names`,
+    `no criterion and matches no Shark finding is recorded as ADVISORY, not a lock-veto.`,
   ].join('\n');
 }
 

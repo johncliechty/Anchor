@@ -1,3 +1,12 @@
+// Hermeticity pin (P1 2026-07-25): host model prefs (e.g. coding=review=grok in
+// ~/.anchor/model_prefs.json) made Gate-3 seating resolve SAME-family, so the
+// engine's (correct) JumperSelfReviewHalt failed 9 suite tests on such hosts.
+// Pin independent families — env outranks the prefs file — so the suite is
+// hermetic everywhere. The engine refusal itself stays covered by the tests
+// that pin same-family deliberately.
+process.env.CODING_FAMILY = 'claude';
+process.env.REVIEW_FAMILY = 'gemini';
+
 import test from 'node:test';
 import assert from 'node:assert';
 import { Synthesizer, runGandalf, PetersonQuery, petersonQuery, HesseGlassBead, hesseGlassBead, DiracTransfer, diracTransfer, KillFilter, killFilter, Jumper, jumper } from './index.js';

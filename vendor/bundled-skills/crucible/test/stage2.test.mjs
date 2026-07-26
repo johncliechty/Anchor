@@ -311,6 +311,49 @@ test('approveImplementationPlan refuses a not-yet-converged loop', () => {
   );
 });
 
+test('P1 2026-07-25 (0069): a HUMAN-LOCKABLE loop is approvable with approved:true; unapproved it still refuses', () => {
+  // The user is the convergence authority — human-lockable + explicit approval locks.
+  const ok = approveImplementationPlan({ loop: { modelSideLockable: false, humanLockable: true, roundsRun: 3 }, approved: true });
+  assert.equal(ok.approved, true);
+  assert.equal(ok.humanLockable, true, 'the approval record says this was a human lock, honestly');
+  // Without approval, a human-lockable loop cannot pass (nothing weakened).
+  assert.throws(
+    () => approveImplementationPlan({ loop: { modelSideLockable: false, humanLockable: true }, approved: false }),
+    (e) => e instanceof HaltError && e.pending_action === 'stage2-not-converged',
+  );
+});
+
+test('P1 2026-07-25 (0069 e2e): approved:true + human-lockable HALT emits the doc-trio on the REAL outputDir instead of throwing without docs', async () => {
+  // Sharks dry from round 1, but the Judge holds NOT_CONVERGED every round →
+  // after 2 dry-held rounds the loop throws stage1-human-lockable. With
+  // approved:true the engine must emit-and-return ("go go go"), not re-tank/throw.
+  const base = makeStage2Agent({ blockedUntilRound: 0 });
+  const agent = async (prompt, opts = {}) => {
+    const label = opts.label || '';
+    if (label.startsWith('judge:')) return { decision: 'NOT_CONVERGED', reasons: ['cold feet'] };
+    // Dead revise seam: the prior (well-formed, wave-bearing) rendered plan is kept —
+    // the human-lockable best draft must be the document the user actually approves.
+    if (label.startsWith('stage1:revise')) return null;
+    return base(prompt, opts);
+  };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crucible-s2-0069-'));
+  const art = path.join(dir, 'artifacts');
+  try {
+    const res = await runStage2({
+      agent, northStar: NORTH_STAR, masterPlan: MASTER_PLAN, criteria: CRITERIA,
+      outputDir: dir, artifactsDir: art, acceptanceCriteria: ['every wave has a done-when'],
+      approved: true,
+    });
+    assert.ok(res.docTrio, 'the doc-trio is emitted on the real outputDir');
+    assert.ok(res.handoff?.handed_off, 'the machine well-formedness gate still ran and passed');
+    assert.equal(res.approval.humanLockable, true, 'the approval record stamps the human lock');
+    const planFile = fs.readFileSync(res.docTrio.files.plan, 'utf8');
+    assert.ok(planFile.trim().length >= 80, 'a real plan document was written (never [object Object]/stub)');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // --- done-when + G/W/T: end-to-end, gated by the REAL well-formedness gate ---
 
 test('done-when: a scripted approved Master Plan runs through Stage 2 to a doc-trio that PASSES the real well-formedness gate with zero HALTs', async () => {

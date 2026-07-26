@@ -67,6 +67,12 @@ test('Wave 2 - Build-failing AST/static lint guard rejecting residual stakes lit
   // Verify that it actually imports and calls deriveGovernorContract
   assert(noComments.includes('deriveGovernorContract('), 'Must derive contract from deriveGovernorContract');
   assert(noComments.includes('const thresholds = contract.thresholds'), 'Must read thresholds from governor output');
-  assert(noComments.includes('const cap = contract.roundBudget'), 'Must read cap from governor output');
+  // Track B1 W3: the cap may flow through the sole band resolver (locked knobs, fail-closed)
+  // with the governor contract's roundBudget as the fallback — either path keeps the cap
+  // decision inside governed outputs, which is this lint's intent.
+  assert(
+    noComments.includes('const cap = contract.roundBudget') ||
+      (noComments.includes('resolveBandRoundBudget(') && noComments.includes('contract.roundBudget')),
+    'Must read cap from governor output (directly, or via the band resolver with the locked-contract fallback)');
   assert(noComments.includes('const tier = contract.tier'), 'Must read tier from governor output');
 });

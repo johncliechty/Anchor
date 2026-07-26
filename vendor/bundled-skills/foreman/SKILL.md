@@ -45,6 +45,31 @@ on a defined blocker set**.
 > `[test-only]` in its title); transport-failed reviewers degrade instead of halting; the
 > reviewer fan-out is stakes-gated (full panel on terminal/fix-iter waves).
 
+> **Status (refreshed 2026-07-25 — July hardening now documented):**
+> - **Gate is ASYNC with a heartbeat** — during a gate the status log prints
+>   `gate running · t+Nm · last: <output line>` every minute (a silent 20-minute
+>   `spawnSync` freeze is gone). The gate command is **re-resolved from the plan on
+>   disk every iteration**, so a plan amendment rebinds the live gate mid-run.
+> - **Gate timeout is CLASSIFIED, never a fake RED**: a gate killed at the cap
+>   (default 20m; `FOREMAN_GATE_TIMEOUT_MS`) HALTs as `[taxonomy:gate-timeout]`
+>   `TIMEOUT_INCOMPLETE` with the pytest progress %, kills the child TREE (no orphan
+>   pytest), and steers you to scope the suite — the FIX loop never chases it.
+> - **Per-wave scoped gates**: a `gate-command:` line under a wave heading scopes that
+>   wave's gate (0086). Under a plan-declared scoped gate the test-only evidence bar
+>   accepts the wave's NET-NEW test count; an undeclared subset run still HALTs.
+> - **Clear-halt discipline**: `--clear-halt` on a vacuous halt is REFUSED unless code
+>   landed; `--clear-halt --force` re-enters EXECUTE with eyes open; a PLAN-AMENDMENT
+>   clear re-enters EXECUTE at iteration 0. Halt reasons carry `[taxonomy:*]` prefixes
+>   (vacuous, ambiguity, review-transport, gate-timeout, dead-process, …).
+> - **`review:degraded`**: unparseable/unreachable reviewer seats are dropped loudly;
+>   ALL seats failed + gate GREEN proceeds stamped `review:degraded` (gate is ground
+>   truth §5); ALL failed + gate not-GREEN halts as review-transport.
+> - **EXECUTION-LOG.md is orchestrator-appended on every GO** (one GREEN line per
+>   wave, committed with the wave) — downstream agents can trust it for prerequisites.
+> - **NEVER run `git clean -fd` in a Foreman workspace** — two total-project-loss
+>   events (journals 0013/0042). Non-convergence uses `git stash` (recoverable);
+>   untracked deliverables are exactly what `git clean` destroys.
+
 ## What Foreman is / is NOT
 
 - **Is:** a loop that takes a frozen plan and drives it to done wave by wave —

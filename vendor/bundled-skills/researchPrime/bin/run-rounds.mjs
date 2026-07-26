@@ -32,13 +32,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  orchestrateRound,
   makeConvergenceTracker,
   assessConvergenceHonesty,
   countUnresolvedHighSeverity,
+  isDryRound,
+  isEmptyRound,
 } from './round.mjs';
+import { runGovernedRound } from './governor.mjs';
 import { deriveGovernorContract } from './formal-governor.mjs';
-import { assembleDeliverable } from './deliverable.mjs';
+import { assembleDeliverable, checkOutputConformance } from './deliverable.mjs';
+import { calibrationVerdict } from './rho-ledger.mjs';
 import { loadGate } from './gate-loader.mjs';
 import { HaltError } from './trio-core/contract-core.mjs';
 import {
@@ -48,6 +51,7 @@ import {
   DEFAULT_ROUND_ROUTES,
   SINGLE_FAMILY_ROUTES,
 } from './live-round-agent.mjs';
+import { resolveBandRoundBudget } from './intake.mjs';
 
 export async function runRounds(runDir, { maxRounds = null, env = process.env, log = console.log } = {}) {
   const started = new Date().toISOString();
@@ -74,10 +78,52 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
     .map((f) => JSON.parse(fs.readFileSync(path.join(runDir, f), 'utf8')));
   if (!allInputs.length) throw new Error(`no round-*-input.json found in ${runDir}`);
 
-  const contract = governanceRecord.lockedGovernorOutput || deriveGovernorContract(allInputs[0]);
+  // P0 2026-07-25 (journal 0004): a legacy governance record carries the two-gate
+  // placeholder `{hash:'mock-hash'}` with NO thresholds/tier — the old `||` short-
+  // circuited on that truthy object and crashed at thresholds.N. A locked output is
+  // only usable as the contract when it actually CARRIES the contract.
+  const locked = governanceRecord.lockedGovernorOutput;
+  const lockedUsable = !!(locked && locked.thresholds && locked.tier != null);
+  if (locked && !lockedUsable) {
+    log('!! governance lockedGovernorOutput carries no governor contract (legacy placeholder record) — deriving the contract from round-1 input');
+  }
+  const contract = lockedUsable ? locked : deriveGovernorContract(allInputs[0]);
   const thresholds = contract.thresholds;
-  const cap = contract.roundBudget;
   const tier = contract.tier;
+
+  // Track B1 W3: sole resolver resolveBandRoundBudget — formal path is fail-closed
+  // (missing/unlocked extension → HaltError, never source=default FULL knobs).
+  // Cap precedence: explicit CLI maxRounds > env RESEARCHPRIME_MAX_ROUNDS > locked knobs.
+  // includeAdjudication from extension knobs only (never argv).
+  let band;
+  try {
+    band = resolveBandRoundBudget({
+      runDir,
+      maxRounds,
+      env,
+      failClosed: true,
+      fallback: typeof contract.roundBudget === 'number' ? contract.roundBudget : 8,
+    });
+  } catch (e) {
+    if (e && (e.name === 'HaltError' || e instanceof HaltError || e instanceof Error)) {
+      const haltRecord = {
+        status: 'HALTED',
+        reason: e.message,
+        code: e.detail?.code ?? e.code ?? 'BAND_BUDGET_HALT',
+        timestamp: new Date().toISOString(),
+      };
+      try {
+        fs.writeFileSync(path.join(runDir, 'HALT-RECORD.json'), JSON.stringify(haltRecord, null, 2));
+      } catch { /* best-effort HALT-RECORD */ }
+    }
+    throw e;
+  }
+  const cap = band.cap;
+  const includeAdjudication = band.includeAdjudication;
+  log(
+    `band: cap=${cap} source=${band.source} includeAdjudication=${includeAdjudication}` +
+      (band.knobs?.depth ? ` depth=${band.knobs.depth}` : ''),
+  );
 
   // The HARD budget: never process past the cap; say so loudly (no silent truncation).
   const inputs = allInputs.slice(0, cap);
@@ -112,36 +158,55 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
     const agent = LIVE_ROUND
       ? liveAgent
       : instrumentRoundAgent({ agent: replayAgent(inp.adjudications ?? {}), routes: SINGLE_FAMILY_ROUTES, tracker: reached });
-    const result = await orchestrateRound({
+    // P0 2026-07-25 (T9): route through the GOVERNED round, not bare orchestrateRound.
+    // The governor was computed + logged but gated nothing: judge/synthesizer were
+    // hard-true at every tier (SKILL.md:94's "tier low fires ZERO" promise was false),
+    // and the crit-4 zero-AXIS skip never ran. runGovernedRound is the already-built,
+    // already-tested wiring; the band's includeAdjudication knob rides as a
+    // tighten-only debate override (LITE can force debate off, never on).
+    const result = await runGovernedRound({
       agent,
+      stakes: tier,
       round: inp.round,
       northStar: inp.northStar,
       reviews: inp.reviews,
       priorBlockerIds: [...priorBlockerIds],
+      includeDebate: includeAdjudication,
     });
+    // A SKIPPED round (zero-AXIS) returns the pure tally without the orchestration
+    // extras — derive dry/empty from the same predicates the tracker uses.
+    const dry = result.dry ?? isDryRound(result);
+    const empty = result.empty ?? isEmptyRound(result);
     const obs = tracker.observe(result);
     for (const b of result.tally.blockers) priorBlockerIds.add(b.id);
-    if (result.dry && !result.empty && roundsToDry == null) roundsToDry = obs.countedRounds;
+    if (dry && !empty && roundsToDry == null) roundsToDry = obs.countedRounds;
 
     const summary = {
       round: result.round,
       verdict: result.tally.verdict,
-      dry: result.dry,
-      empty: result.empty,
+      dry,
+      empty,
+      governor: {
+        tier: result.tier,
+        skipped: result.skipped === true,
+        axisFindingCount: result.axisFindingCount,
+        reason: result.reason,
+        policy: result.policy ? { synthesize: result.policy.synthesize, judge: result.policy.judge, debate: result.policy.debate } : null,
+      },
       newBlockers: result.tally.newBlockers.map((b) => ({ id: b.id, severity: b.severity, agreement: b.agreement, message: b.message })),
       allBlockers: result.tally.blockers.map((b) => b.id),
       demoted: result.tally.demoted.map((d) => ({ id: d.id, message: d.message })),
-      quorum: result.quorum,
-      conflicts: result.conflicts,
+      quorum: result.quorum ?? null,
+      conflicts: result.conflicts ?? [],
       debateFired: result.debate?.fired ?? false,
-      judgeVerdict: result.judgeVerdict,
-      direction: result.direction,
+      judgeVerdict: result.judgeVerdict ?? null,
+      direction: result.direction ?? null,
       counts: result.counts,
       trackerState: obs,
     };
     roundResults.push(result);
     fs.writeFileSync(path.join(runDir, `round-${result.round}-result.json`), JSON.stringify(summary, null, 2));
-    log(`round ${result.round}: ${result.tally.verdict} | dry=${result.dry} empty=${result.empty} | newBlockers=${result.tally.newBlockers.length} | dryStreak=${obs.dryStreak}/${thresholds.N} emptyStreak=${obs.emptyStreak} | converged=${obs.converged}${obs.mode ? ` (${obs.mode})` : ''}`);
+    log(`round ${result.round}: ${result.tally.verdict} | dry=${dry} empty=${empty}${result.skipped ? ' | SKIPPED (zero-AXIS, crit-4)' : ''} | counts=${JSON.stringify(result.counts)} | newBlockers=${result.tally.newBlockers.length} | dryStreak=${obs.dryStreak}/${thresholds.N} emptyStreak=${obs.emptyStreak} | converged=${obs.converged}${obs.mode ? ` (${obs.mode})` : ''}`);
     if (obs.converged) break; // convergence reached — no need to consume further inputs
   }
 
@@ -175,17 +240,42 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
 
   let deliverable = null;
   if (finalState.converged) {
+    // P0 2026-07-25: carry the REAL Wave-9 calibration verdict. Default mode is a pure
+    // function of the final round's reviewers (no ledger file needed) — hard-nulling it
+    // made every engine deliverable fail its own conformance contract (§ below).
+    const calibration = calibrationVerdict({
+      reviewers: finalRound?.reviews ?? inputs[inputs.length - 1]?.reviews ?? [],
+      useLedger: false,
+    });
     deliverable = assembleDeliverable({
       mode: 'engine',
       rounds: roundResults,
       convergence,
-      calibration: null,
+      calibration,
       substrateFamilies,
       northStar: inputs[0].northStar,
     });
+    // P0 2026-07-25: the engine's OWN output-conformance gate, actually called — the
+    // canonical path used to write `verified:true` deliverables that this very check
+    // rejects (missing calibration section), and nothing ever ran it. HALT loudly on
+    // violation; never ship a deliverable the contract refuses.
+    const conformance = checkOutputConformance(deliverable);
+    if (!conformance.ok) {
+      const haltRecord = {
+        status: 'HALTED',
+        reason: 'DELIVERABLE output-conformance violation (engine contract)',
+        violations: conformance.violations,
+        timestamp: new Date().toISOString(),
+      };
+      fs.writeFileSync(path.join(runDir, 'HALT-RECORD.json'), JSON.stringify(haltRecord, null, 2));
+      throw new HaltError(
+        `DELIVERABLE conformance violation: ${conformance.violations.join(' | ')}`,
+        'the engine deliverable failed its own output contract — fix the assembly, never ship an unconformant deliverable',
+      );
+    }
     const out = { deliverable, convergence, honesty, tier, thresholds, unresolvedHigh };
     fs.writeFileSync(path.join(runDir, 'DELIVERABLE-ENGINE.json'), JSON.stringify(out, null, 2));
-    log(`\nCONVERGED (${convergence.mode}). cross_model=${deliverable.cross_model} verified=${deliverable.verified}. Wrote DELIVERABLE-ENGINE.json`);
+    log(`\nCONVERGED (${convergence.mode}). cross_model=${deliverable.cross_model} verified=${deliverable.verified} rho_mode=${calibration.mode}. Wrote DELIVERABLE-ENGINE.json (output-conformance OK)`);
   } else {
     log(capped
       ? `\nROUND BUDGET HIT (${cap}) without convergence — honest stop; open blockers are in RUN-STATE.json (nothing discarded).`

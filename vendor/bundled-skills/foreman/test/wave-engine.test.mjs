@@ -317,6 +317,28 @@ test('T4 unit: the evidence bar stays conservative — a partial gate or a no-op
   } finally { cleanup(dir); }
 });
 
+test('P1 2026-07-25: a PLAN-DECLARED scoped gate satisfies the test-only bar at net-new count; an undeclared subset still HALTs', () => {
+  const dir = testOnlyProject();
+  try {
+    const foremanDir = path.join(dir, '.foreman');
+    const base = {
+      invBefore: { files: 1, tests: 1, asserts: 1, skips: 0 },
+      invNow: { files: 2, tests: 2, asserts: 2, skips: 0 },
+      waveTitle: '',
+    };
+    // Plan-declared scoped gate (gateScoped) ran exactly the net-new count -> accepted (0035/0041).
+    assert.equal(_internals.checkVacuousGreen(dir, foremanDir, ['test/extra.test.mjs'],
+      { ...base, gateTap: { tests: 1, pass: 1, fail: 0 }, gateScoped: true }), null);
+    // The SAME subset count with NO plan-declared scoping stays a conservative HALT (T4 unweakened).
+    assert.match(_internals.checkVacuousGreen(dir, foremanDir, ['test/extra.test.mjs'],
+      { ...base, gateTap: { tests: 1, pass: 1, fail: 0 } }) || '', /evidence bar did not pass/);
+    // Modify-only [test-only] + scoped gate needs a real (>=1-test) green run.
+    assert.equal(_internals.checkVacuousGreen(dir, foremanDir, ['test/extra.test.mjs'],
+      { ...base, invNow: { files: 1, tests: 1, asserts: 1, skips: 0 },
+        gateTap: { tests: 1, pass: 1, fail: 0 }, waveTitle: 'w [test-only]', gateScoped: true }), null);
+  } finally { cleanup(dir); }
+});
+
 test('finding identity: same finding from 2 reviewers gets agreement=2 and a stable id', () => {
   const f = { severity: 'MAJOR', file: 'src/calc.js', line: 17, rule: 'assertion-failed' };
   const merged = collectFindings([
@@ -433,7 +455,7 @@ test('R2-3 forge defense — even a FULL fake count line (tests/pass/fail) HALTs
   } finally { cleanup(dir); }
 });
 
-test('R2-3 unit — runGate green predicate: structured pass ⇒ green; vacuous shapes ⇒ vacuous_reason', () => {
+test('R2-3 unit — runGate green predicate: structured pass ⇒ green; vacuous shapes ⇒ vacuous_reason', async () => {
   const dir = tmpProject();
   const foremanDir = path.join(dir, '.foreman');
   const wave = { n: 1 };
@@ -441,19 +463,74 @@ test('R2-3 unit — runGate green predicate: structured pass ⇒ green; vacuous 
     // positive: TAP test-point event (`ok 1`, ASCII so it survives cmd echo) +
     // positive counts ⇒ green, no vacuous_reason. (The end-to-end test above is
     // the integration positive control over a real spec-reporter `✔` green.)
-    const g1 = runGate({ projectDir: dir, foremanDir, wave, iteration: 0,
+    const g1 = await runGate({ projectDir: dir, foremanDir, wave, iteration: 0,
       testCommand: 'cmd /c "echo ok 1 - add& echo # tests 1& echo # pass 1& echo # fail 0& exit 0"' });
     assert.equal(g1.green, true, 'real events + positive pass + 0 fail ⇒ GREEN');
     assert.equal(g1.vacuous_reason, null);
     // negative: exit 0, nothing ⇒ not green, vacuous_reason set
-    const g2 = runGate({ projectDir: dir, foremanDir, wave, iteration: 1, testCommand: 'cmd /c exit 0' });
+    const g2 = await runGate({ projectDir: dir, foremanDir, wave, iteration: 1, testCommand: 'cmd /c exit 0' });
     assert.equal(g2.green, false);
     assert.match(g2.vacuous_reason || '', /refusing vacuous GREEN/);
     // a genuine RED (exit 1) is NOT vacuous — it keeps the normal fix-loop path
-    const g3 = runGate({ projectDir: dir, foremanDir, wave, iteration: 2, testCommand: 'cmd /c exit 1' });
+    const g3 = await runGate({ projectDir: dir, foremanDir, wave, iteration: 2, testCommand: 'cmd /c exit 1' });
     assert.equal(g3.green, false);
     assert.equal(g3.vacuous_reason, null, 'non-zero exit is RED, never vacuous');
   } finally { cleanup(dir); }
+});
+
+// ---------------------------------------------------------------------------
+// P1 2026-07-25 (0078 T1): a timed-out gate is TIMEOUT_INCOMPLETE — never a fake
+// "0 pass 0 fail" RED for the fix loop to chase, and never vacuous.
+// ---------------------------------------------------------------------------
+
+test('gate timeout ⇒ TIMEOUT_INCOMPLETE class, not RED and not vacuous (0078 T1)', async () => {
+  const dir = tmpProject();
+  const foremanDir = path.join(dir, '.foreman');
+  const saved = process.env.FOREMAN_GATE_TIMEOUT_MS;
+  process.env.FOREMAN_GATE_TIMEOUT_MS = '1200';
+  try {
+    const g = await runGate({ projectDir: dir, foremanDir, wave: { n: 1 }, iteration: 0,
+      testCommand: `node -e "setTimeout(() => {}, 15000)"` });
+    assert.equal(g.timed_out, true, 'the kill must be classified as a timeout');
+    assert.equal(g.gate_class, 'TIMEOUT_INCOMPLETE');
+    assert.equal(g.green, false, 'a killed gate is never GREEN');
+    assert.equal(g.vacuous_reason, null, 'a killed gate is INCOMPLETE, not vacuous — the suite did not decline to run');
+  } finally {
+    if (saved === undefined) delete process.env.FOREMAN_GATE_TIMEOUT_MS;
+    else process.env.FOREMAN_GATE_TIMEOUT_MS = saved;
+    cleanup(dir);
+  }
+});
+
+test('runWave HALTs [taxonomy:gate-timeout] on a timed-out gate — no fix-loop chase', async () => {
+  const dir = passingProject();
+  const saved = process.env.FOREMAN_GATE_TIMEOUT_MS;
+  process.env.FOREMAN_GATE_TIMEOUT_MS = '1200';
+  let fixCalls = 0;
+  try {
+    const driver = {
+      async execute(ctx) {
+        const f = path.join(ctx.projectDir, 'src', 'calc.js');
+        fs.writeFileSync(f, fs.readFileSync(f, 'utf8') + '// touched\n');
+        return { note: 'touch', citation: null };
+      },
+      async review() { return { reviewer: 'r', answerable: 'yes', findings: [] }; },
+      async fix() { fixCalls += 1; return { note: 'no-op' }; },
+    };
+    const r = await runWave({
+      projectDir: dir, testCommand: `node -e "setTimeout(() => {}, 15000)"`,
+      wave: { n: 1, title: 'w', line: 1 }, totalWaves: 1,
+      planPath: 'PLAN.md', driver, reviewerCount: 1, fixIterCap: 3,
+    });
+    assert.equal(r.status, 'HALT');
+    assert.match(r.haltReason, /taxonomy:gate-timeout/);
+    assert.match(r.haltReason, /did not finish/, 'the reason must say the tests did not finish, not that they failed');
+    assert.equal(fixCalls, 0, 'the FIX loop must never chase an unfinished suite');
+  } finally {
+    if (saved === undefined) delete process.env.FOREMAN_GATE_TIMEOUT_MS;
+    else process.env.FOREMAN_GATE_TIMEOUT_MS = saved;
+    cleanup(dir);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -523,23 +600,23 @@ test('BRR-5: a forged stream (`not ok 1` + `# fail 0` + exit 0) HALTs — incons
   } finally { cleanup(dir); }
 });
 
-test('BRR-5 unit — runGate: passing event ⇒ green; `not ok` with `# fail 0` ⇒ refused; counts-only ⇒ refused', () => {
+test('BRR-5 unit — runGate: passing event ⇒ green; `not ok` with `# fail 0` ⇒ refused; counts-only ⇒ refused', async () => {
   const dir = tmpProject();
   const foremanDir = path.join(dir, '.foreman');
   const wave = { n: 1 };
   try {
     // honest single pass: ok 1 + # fail 0 + exit 0 ⇒ green, no vacuous_reason
-    const g1 = runGate({ projectDir: dir, foremanDir, wave, iteration: 0,
+    const g1 = await runGate({ projectDir: dir, foremanDir, wave, iteration: 0,
       testCommand: 'cmd /c "echo ok 1 - p& echo # tests 1& echo # pass 1& echo # fail 0& exit 0"' });
     assert.equal(g1.green, true, 'a real passing event + consistent counts ⇒ GREEN');
     assert.equal(g1.vacuous_reason, null);
     // forged: a real `not ok 1` but the summary lies `# fail 0`, exit 0 ⇒ inconsistent
-    const g2 = runGate({ projectDir: dir, foremanDir, wave, iteration: 1,
+    const g2 = await runGate({ projectDir: dir, foremanDir, wave, iteration: 1,
       testCommand: 'cmd /c "echo not ok 1 - forged& echo # tests 1& echo # pass 1& echo # fail 0& exit 0"' });
     assert.equal(g2.green, false);
     assert.match(g2.vacuous_reason || '', /inconsistent with emitted test events/);
     // counts only, no per-test event ran ⇒ refused (no real passing event)
-    const g3 = runGate({ projectDir: dir, foremanDir, wave, iteration: 2,
+    const g3 = await runGate({ projectDir: dir, foremanDir, wave, iteration: 2,
       testCommand: 'cmd /c "echo # tests 1& echo # pass 1& echo # fail 0& exit 0"' });
     assert.equal(g3.green, false);
     assert.match(g3.vacuous_reason || '', /no real per-test events/);
@@ -625,6 +702,28 @@ test('T10a-bis: ALL reviewers transport-failed + GREEN gate => GO review:degrade
     assert.equal(r.status, 'GO', 'GREEN gate must not die when every reviewer transport-fails');
     assert.equal(r.verdict, 'GO');
     assert.ok(!r.haltReason, 'no transport HALT when gate GREEN');
+  } finally { cleanup(dir); }
+});
+
+test('P0 2026-07-25: an UNPARSEABLE reviewer reply (answerable:no + transport_failed) degrades — never an ambiguity HALT', async () => {
+  // Journals 0080/0081-ecgberht (2026-07-24): drivers map parse-failure-after-retry to
+  // answerable:'no', which the §4.7 ambiguity gate caught FIRST as a hard HALT — the
+  // T10a degrade machinery was unreachable for the dominant live failure shape. The
+  // drivers now ALSO stamp transport_failed:true (keeping answerable:'no' so Crucible's
+  // shark quorum still counts the seat as unanswered). This pins the engine contract:
+  // the transport check runs before the ambiguity gate and drops the seat.
+  const dir = passingProject();
+  try {
+    const { driver } = t10Driver((ctx) => ctx.reviewerIndex === 0
+      ? { reviewer: 'r0', answerable: 'no', transport_failed: true,
+          note: 'reviewer r0 response was not parseable JSON after one retry (transport failure, not a plan problem)', findings: [] }
+      : { reviewer: 'r1', answerable: 'yes', findings: [] });
+    const r = await runWave({
+      projectDir: dir, testCommand: 'node --test', wave: { n: 1, title: 'w', line: 1 }, totalWaves: 1,
+      planPath: 'PLAN.md', driver, reviewerCount: 2, fixIterCap: 4,
+    });
+    assert.equal(r.status, 'GO', 'an unparseable reviewer must degrade (dropped seat), not HALT as ambiguity');
+    assert.ok(!r.haltReason, 'no [taxonomy:ambiguity] HALT for a parse failure');
   } finally { cleanup(dir); }
 });
 

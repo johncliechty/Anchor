@@ -293,8 +293,13 @@ async function gradeGandalfDraftCrossFamily(rawDraft, options = {}) {
 
   // Dispatch the live/stub refuter; mint claim-bound commissions into the SHARED ledger, then grade the
   // refuted draft against the SAME ledger's resolver — cross_model / GROUNDED are DERIVED here.
+  // P1 2026-07-25 (journals 0003/0012): forward the refuter budget — the prereg R=3
+  // ceiling HALTed whole tournaments (6 firing elevations > 3) with no dial to turn;
+  // standalone gandalf has --budget but the compose seam never passed one through.
   const { draft } = await runLiveRefutation(rawDraft, {
     agent: refuterAgent, ledger, routes, drafterFamily, refuterFamily, log: options.log,
+    ...(Number.isInteger(options.refuterBudget) && options.refuterBudget > 0
+      ? { budget: options.refuterBudget } : {}),
   });
   return applySeamPass(draft, { resolveCommission });
 }
@@ -932,9 +937,16 @@ export class Jumper {
 
     const synthesizer = new Synthesizer({ driver, runAgent: customRunAgent });
 
+    // P1 2026-07-25 (journals 0005/0004/0007/0011/0014): stage heartbeats. Sparse
+    // logging made a healthy long run indistinguishable from a hang and caused a
+    // false-DONE by the cadence agent. `options.log` is the sink (CLI wires stderr).
+    const hb = typeof runOptions.log === 'function' ? runOptions.log : () => {};
+
     // Step 1: Run Gandalf to get structured advice. Thread the run options through so the composed
     // deep-think lane inherits the cross-family refuter injection (refuterAgent/ledger/routes) too (W7).
+    hb('jumper: gandalf:start');
     const gandalfRead = await runGandalf(problemState, { ...runOptions, driver, runAgent: customRunAgent });
+    hb('jumper: gandalf:done');
 
     // Step 2: Update synthesizer and get steering flags
     const synth1 = await synthesizer.update({
@@ -1009,10 +1021,17 @@ export class Jumper {
     if (fanOut > 1) {
       const runTournament = async (extraFlags = []) => {
         const candidates = await Promise.all(
-          Array.from({ length: fanOut }, (_, i) => buildCandidate(SPHERES[i % SPHERES.length], extraFlags)));
-        const judged = await Promise.all(candidates.map(async (concept) => ({
-          concept, filter: await filterEngine.run(concept, runOptions),
-        })));
+          Array.from({ length: fanOut }, (_, i) => {
+            hb(`jumper: sphere:${i + 1}/${fanOut} candidate start`);
+            return buildCandidate(SPHERES[i % SPHERES.length], extraFlags)
+              .then((c) => { hb(`jumper: sphere:${i + 1}/${fanOut} candidate built (${c?.analogicalMapping?.foreignDomain ?? '?'})`); return c; });
+          }));
+        const judged = await Promise.all(candidates.map(async (concept, i) => {
+          hb(`jumper: killfilter:candidate ${i + 1}/${candidates.length} start`);
+          const filter = await filterEngine.run(concept, runOptions);
+          hb(`jumper: killfilter:candidate ${i + 1}/${candidates.length} ${filter.passed ? 'PASSED all gates' : `KILLED at gate ${filter.failedAtGate}`}`);
+          return { concept, filter };
+        }));
         return {
           survivors: judged.filter((j) => j.filter.passed),
           killed: judged.filter((j) => !j.filter.passed),

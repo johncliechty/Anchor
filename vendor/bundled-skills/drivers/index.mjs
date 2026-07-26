@@ -51,7 +51,8 @@ export const geminiCliNativeDriver = {
       log(`   !! ${label} still unparseable — ABSTAIN (answerable:no) → engine HALTs for human review`);
       return {
         answerable: 'no',
-        note: `reviewer ${label} response was not parseable JSON after one retry — cannot verify findings; HALT for human review`,
+        transport_failed: true,
+        note: `reviewer ${label} response was not parseable JSON after one retry (transport failure, not a plan problem)`,
         findings: []
       };
     }
@@ -287,6 +288,15 @@ export async function runAgent(opts = {}) {
   // Stale TRIO_DRIVER_SHARK=gemini-cli setx must NOT outrank Anchor coding/review knobs.
   // Same-family coding+review is allowed; stamp cross_model from loadModelFamilies().
   let name = opts.driver;
+  // Hermeticity guard (2026-07-25): an injected stub transport pins the matching
+  // backend. Host model-prefs (~/.anchor/model_prefs.json) must NEVER re-route a
+  // stubbed call to a live CLI — observed: driver-interface tests spawning real
+  // billable sessions when prefs resolved coding=grok (usage-leak class, 07-14).
+  if (!name) {
+    if (opts.runClaude) name = 'claude';
+    else if (opts.runGemini) name = 'gemini-cli';
+    else if (opts.runGrokCli) name = 'grok-cli';
+  }
   const role = String(opts.role || opts.label || '').split(/[:#.\s]/)[0];
   if (!name) {
     name = resolveDriverFromFamilies(role, process.env) || null;

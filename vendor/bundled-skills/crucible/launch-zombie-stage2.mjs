@@ -49,7 +49,7 @@ async function main() {
     criteria,
     outputDir,
     depth: 'FULL',
-    approved: true,
+    // approved is intentionally NOT set: the user locks the Implementation Plan (North-Star you-approve gate).
     artifactsDir,
     statusLog,
     routes,

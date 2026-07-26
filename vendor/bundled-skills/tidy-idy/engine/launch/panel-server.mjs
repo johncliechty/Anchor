@@ -279,7 +279,7 @@ export async function servePanel({
 .card{max-width:36rem;border:1px solid #2a2f3a;border-radius:12px;padding:1.25rem 1.4rem;background:#161a22}
 h1{font-size:1.2rem;margin:0 0 .5rem}p{color:#9aa0a6;margin:0 0 .75rem}code{color:#8ab4f8}</style></head>
 <body><div class=card><h1>This panel link was already used</h1>
-<p>The bootstrap URL is single-use (so a refresh cannot re-enable Apply). Close this tab and click <b>Tidy-Idy</b> on the project again — Anchor will mint a fresh open link for the live panel.</p>
+<p>The bootstrap URL is single-use (so a refresh cannot re-enable Apply). Close this tab and re-open the panel <b>from where you launched it</b> — the <b>Tidy-Idy</b> button on the project in Anchor, or a fresh <code>tidy-idy</code> CLI run — either mints a fresh single-use open link for the live panel.</p>
 <p><code>bootstrap nonce already redeemed</code></p></div></body></html>`;
         res.writeHead(410, {
           'Content-Type': 'text/html; charset=utf-8',

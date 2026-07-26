@@ -196,7 +196,7 @@ test('live Foreman run-live uses inheritReviewerCount (no dark LIGHT→0 path)',
   // Soft live-path check: same pin pattern as Wave 3 Stage-0 wire into trio.
   const candidates = [
     '<path>',
-    'C:\\Users\\example\\.claude\\skills\\foreman\\bin\\run-live.mjs',
+    'C:\\Users\\john\\.claude\\skills\\foreman\\bin\\run-live.mjs',
   ];
   let checked = 0;
   for (const p of candidates) {
