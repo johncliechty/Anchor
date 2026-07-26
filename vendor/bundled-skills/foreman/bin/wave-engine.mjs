@@ -260,9 +260,36 @@ function testFilesOf(root, foremanDir) {
     .filter(isTestFile);
 }
 
-function inventory(root, foremanDir) {
+/**
+ * P2 2026-07-25 (journal 0035's monorepo half): derive the path scope a wave-scoped
+ * gate command actually selects (explicit file/dir tokens that exist on disk), so the
+ * test-only evidence inventory can be counted over the SAME tree the gate runs —
+ * a whole-repo static inventory vs a scoped gate compared 2597 to 29 and false-halted.
+ * Pure-ish (fs.existsSync only); empty result ⇒ no derivable scope (full inventory).
+ */
+export function gateScopePaths(command, root) {
+  const allToks = String(command || '').split(/\s+/);
+  // Script runners (npm/yarn/pnpm) take SCRIPT names, not paths — no derivable scope.
+  if (/^(npm|yarn|pnpm)(\.cmd)?$/i.test(allToks[0] || '')) return [];
+  const toks = allToks.slice(1);
+  const out = [];
+  for (const t of toks) {
+    const clean = t.replace(/^['"]+|['"]+$/g, '');
+    if (!clean || clean.startsWith('-')) continue;
+    if (!/[\\/]|^tests?$|\.(m?js|cjs|py)$/i.test(clean)) continue;
+    const abs = path.join(root, clean);
+    if (fs.existsSync(abs)) out.push(path.relative(root, abs).split(path.sep).join('/'));
+  }
+  return out;
+}
+
+function inventory(root, foremanDir, { scopePaths = null } = {}) {
   let tests = 0, asserts = 0, skips = 0, files = 0;
-  for (const rel of testFilesOf(root, foremanDir)) {
+  const inScope = (rel) => {
+    if (!scopePaths || !scopePaths.length) return true;
+    return scopePaths.some((s) => rel === s || rel.startsWith(`${s}/`));
+  };
+  for (const rel of testFilesOf(root, foremanDir).filter(inScope)) {
     let txt;
     try { txt = fs.readFileSync(path.join(root, rel), 'utf8'); } catch { continue; }
     files++;
@@ -1081,7 +1108,14 @@ export async function runWave(o) {
   const ctx = { projectDir, wave, foremanDir, testCommand, log, planPath, planText };
 
   // §5 anti-test-weakening: snapshot inventory + file hashes BEFORE any change.
-  const invBefore = inventory(projectDir, foremanDir);
+  // P2 2026-07-25 (0035 monorepo half): when the plan declares a wave-scoped gate,
+  // the test-only evidence inventory counts over the SAME tree the gate runs.
+  const invScopeFor = (cmd) => {
+    if (cmd === testCommand) return undefined;
+    const scopePaths = gateScopePaths(cmd, projectDir);
+    return scopePaths.length ? { scopePaths } : undefined;
+  };
+  const invBefore = inventory(projectDir, foremanDir, invScopeFor(resolveWaveGateCommand(wave, testCommand)));
   const hashStart = snapshotHashes(projectDir, foremanDir);
 
   // Intra-wave resume (Phase 3b): seed the fix-iteration counter from the
@@ -1226,7 +1260,9 @@ export async function runWave(o) {
     lastChanged = changed;
 
     // ----- §5 test-integrity guard (any iteration) -----
-    const invNow = inventory(projectDir, foremanDir);
+    // Scoped consistently with invBefore (P2 2026-07-25): a scoped baseline compared
+    // to a whole-repo count would read as a phantom rise/mask a real reduction.
+    const invNow = inventory(projectDir, foremanDir, invScopeFor(waveTestCommand));
     const weak = checkTestWeakening(invBefore, invNow, lastCitation, (lastGate.tap && lastGate.tap.skipped) || 0);
     if (weak) {
       const reason = `test-integrity HALT: ${weak}`;
@@ -1421,7 +1457,7 @@ export async function runWave(o) {
       // snapshot, fresh inventory, the gate's executed counts, the wave title).
       const vac = checkVacuousGreen(projectDir, foremanDir, changed, {
         invBefore,
-        invNow: inventory(projectDir, foremanDir),
+        invNow: inventory(projectDir, foremanDir, invScopeFor(waveTestCommand)),
         gateTap: lastGate.tap,
         waveTitle: wave.title || '',
         waveN: wave.n,

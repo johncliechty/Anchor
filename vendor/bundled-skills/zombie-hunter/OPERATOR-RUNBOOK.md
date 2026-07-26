@@ -74,3 +74,12 @@ Long Crucible/Foreman/foundry runs should launch **outside** the interactive age
 ## SC1 human sign-off (promotion-only)
 
 Optional human checklist in `fixtures/sc1/sc1-human-signoff-checklist.json` must bind to the **same G5 evidence paths and receipt hash tuple** as `sc1_canary_gate`. Sign-off never enables Freeze/Kill by itself.
+
+## Telemetry retention (P2 2026-07-25)
+
+`telemetry.db` grows without bound (observed at 152 MB inside the versioned skill
+folder — ironic for the hygiene sentinel). It is now gitignored along with
+`_foreman-status.log`/`_sentinel-err.log`. Retention: when it exceeds ~200 MB, stop the
+sentinel, archive or delete the db (it is rebuildable runtime telemetry, not product
+state), and restart. A future wave may add automatic rotation; until then this runbook
+entry IS the rotation policy — do not let the db ride a release.

@@ -28,7 +28,10 @@
     },
     "gate1Record": {
       "triageHash": "<TRIAGE_HASH>",
-      "gate1Decision": "ABORT"
+      "gate1Decision": "ABORT",
+      "triageExtensionStamp": "ns01-w5-rp-intake-mapping",
+      "triageDepth": "FULL",
+      "triageTier": "Heavy"
     },
     "gate2RecordWritten": false,
     "governanceWritten": false

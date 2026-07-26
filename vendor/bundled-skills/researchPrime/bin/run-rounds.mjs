@@ -292,7 +292,10 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
   fs.writeFileSync(path.join(runDir, 'RUN-STATE.json'), JSON.stringify(runState, null, 2));
 
   // Run capture for training (Skill Foundry AGENTS.md "Run capture") — best-effort.
+  // Skipped under the test runner (P2 2026-07-25): fixture runs must never pollute
+  // the training feed (same rule as gandalf/tidy-idy).
   try {
+    if (env.NODE_TEST_CONTEXT || process.env.NODE_TEST_CONTEXT) return { convergence, honesty, tier, deliverable, runState };
     const skillDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
     const dir = path.join(skillDir, 'journal', 'runs');
     fs.mkdirSync(dir, { recursive: true });

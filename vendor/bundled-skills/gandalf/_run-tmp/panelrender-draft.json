@@ -1,0 +1,82 @@
+{
+  "reasoning": "TRIAGE — TYPE: mixed (presented as a 'project' folder), but the deep-structure read is that this is not a genuine project: it is a pytest fixture. The path is the tell — pytest-of-john/pytest-3036/test_summary_panel_renders_doc0/P — a temp tree materialized by Anchor's own test suite to exercise the 'summary panel renders' code path; 'doc0' is a parametrization id and 'P' is the project dir under test. SIZE/STAKES: tiny, low. Depth: LIGHT. The honest and most valuable move is to name the category correctly and then extract the one real, load-bearing signal the fixture encodes, rather than manufacture depth against a near-empty scaffold. Evidence of emptiness: only three real content files exist (Anchor.md, CLAUDE.md, plus the .anchor store); git holds exactly one commit ('Initial commit (Anchor bootstrap)') and tracks only CLAUDE.md; CLAUDE.md is stock 'R&D project managed by Anchor' boilerplate. But this fixture is NOT inert like a blank scaffold — it is deliberately seeded to test a rendering surface, and the seeded state contains a genuine, checkable inconsistency that is precisely what a 'summary_panel_renders' test should catch. Load-bearing observation: the .anchor pointer store registers TWO discovered planning efforts — planning/index.json lists disc-fa5a5183e2b4d680 and disc-b7f90850337bb521, each with a .pointer.json (a Master Plan and a NOTES.md under planning/brownfield-discovery/) — yet the two human/machine summary surfaces both report NOTHING: discovery.json shows every lane count = 0, total = 0, docs = []; and Anchor.md (the rendered summary panel) says 'planning — 0 runs, 0 imported' and '(none discovered)'. So the rendered panel and the live scan disagree with the persisted effort index. Compounding it, the two pointer records reference planning/brownfield-discovery/MASTER-PLAN.md and NOTES.md, and NEITHER file exists on disk — they are dangling pointers to artifacts that were never materialized (or were removed). This gives a coherent mechanism hypothesis: the summary panel is generated from a fresh filesystem scan (discovery.json) that finds nothing because the underlying files are absent, and that scan never reconciles against the persisted pointer-record index — so the panel silently under-reports the two efforts the store still tracks. A third, softer flag repeats a pattern seen in sibling fixtures: the .anchor/README asserts a C9 durability policy ('pointer-records are committed so effort history is durable across restarts'), yet git status shows .anchor/ and Anchor.md UNTRACKED after bootstrap — stated-vs-actual, worth flagging in case it reflects real Anchor behavior and not just test scaffolding. SITUATE was NOT performed: the firing gate needs a central load-bearing claim, a plausible better-in-class frame I cannot already cite, AND stakes >= medium; stakes are low for a test fixture, so SITUATE is skipped and stamped. OPERATOR-WRONG pass: the operator aimed a heavyweight deep-think advisor at a near-empty fixture; the finding against that intent is that the correct output is to say 'this is a test fixture' plainly and then surface the ONE real defect it encodes, not to pad an empty scaffold into a full review. Verdict is therefore neither 'this is sound' (there is no effort to be sound) nor 'broken' — it is 'category: seeded test fixture; the seeded state exhibits a real summary-panel/pointer-store consistency gap plus dangling pointers, which is very likely the exact condition under test.'",
+  "verdict": "This is not a real project but a pytest fixture (Anchor's 'test_summary_panel_renders' case), a near-empty bootstrap scaffold seeded to exercise the summary-panel render; there is little to review as a project, but the seeded state carries one genuine, load-bearing defect — the rendered panel (Anchor.md) and live scan (discovery.json) both report '(none discovered)/0' while the persisted pointer store holds two discovered planning efforts whose referenced artifact files do not exist on disk (dangling pointers) — a consistency gap in exactly the surface the test is named for.",
+  "findings": [
+    {
+      "id": "d-1",
+      "kind": "diagnose",
+      "rung": "OBSERVED",
+      "severity": "major",
+      "reasoning": "The target is a pytest temporary fixture, not a genuine effort. The path pytest-of-john/pytest-3036/test_summary_panel_renders_doc0/P is a pytest tmp_path tree: 'test_summary_panel_renders' names the test, 'doc0' is a parametrization id, and 'P' is the project directory under test. Reviewing it 'as a project' is a category error; the honest first move is to classify it. Corroborating signals: a single git commit 'Initial commit (Anchor bootstrap)', only CLAUDE.md tracked, stock boilerplate CLAUDE.md, and gandalf/index.json recording THIS very run (run-1784040574086, status 'running', in_progress:true) — the fixture is watching its own analysis.",
+      "verdict": "Category: pytest fixture for Anchor's summary-panel-render path, not a real project."
+    },
+    {
+      "id": "d-2",
+      "kind": "diagnose",
+      "rung": "OBSERVED",
+      "severity": "major",
+      "reasoning": "The rendered summary panel does not reflect the persisted effort index. .anchor/projects/<id>/planning/index.json lists two discovered efforts (disc-fa5a5183e2b4d680 'Master Plan', disc-b7f90850337bb521 'planning/brownfield-discovery/NOTES.md'), each backed by a committed .pointer.json record. Yet the two summary surfaces both report empty: .anchor discovery.json shows counts.planning = 0, counts.total = 0, docs = []; and Anchor.md (the human-facing panel) renders 'planning — 0 runs, 0 imported' and '(none discovered)'. The rendered panel therefore silently under-reports the two efforts the pointer store still tracks. This is exactly the class of defect a 'summary_panel_renders' test exists to catch, and it is the single most consequential thing in the folder.",
+      "verdict": "Summary panel + live scan report zero/none discovered while the persisted pointer store holds two planning efforts — a render/index consistency gap."
+    },
+    {
+      "id": "d-3",
+      "kind": "diagnose",
+      "rung": "OBSERVED",
+      "severity": "major",
+      "reasoning": "The two pointer records point to files that do not exist. disc-fa5a5183e2b4d680 references planning/brownfield-discovery/MASTER-PLAN.md and disc-b7f90850337bb521 references planning/brownfield-discovery/NOTES.md, but there is no planning/ directory on disk at all (only .anchor/, Anchor.md, CLAUDE.md exist). These are dangling pointer-records — the index tracks efforts whose underlying artifacts were never materialized or were removed. This supplies the likely mechanism for d-2: a fresh-filesystem-scan panel generator (discovery.json) finds nothing because the artifacts are absent, and never reconciles against the surviving pointer index, so the two views diverge.",
+      "verdict": "Both pointer records are dangling — their referenced planning/brownfield-discovery/*.md artifacts are absent from disk, plausibly driving the panel/store divergence."
+    },
+    {
+      "id": "d-4",
+      "kind": "diagnose",
+      "rung": "OBSERVED",
+      "severity": "minor",
+      "reasoning": "Stated-vs-actual durability gap (a pattern also seen in sibling Anchor fixtures). .anchor/README asserts the C9 policy that pointer-records are committed so effort history is durable across restarts, and .anchor/.gitignore is carefully written to re-include the *.pointer.json / index.json records. Yet git status shows .anchor/ and Anchor.md as UNTRACKED after bootstrap (only CLAUDE.md is tracked). If bootstrap is supposed to commit the pointer store, the durability guarantee is not yet in effect in this state; if commit is deferred to a later step, the README overstates the current guarantee. Flagged as minor because it may be an artifact of the test harness stopping before the commit step rather than a product defect.",
+      "verdict": "The committed-for-durability pointer-record policy is not reflected in git state here (.anchor/ untracked) — a stated-vs-actual flag to confirm against real Anchor behavior."
+    },
+    {
+      "id": "a-1",
+      "kind": "anticipate",
+      "rung": "UNVERIFIED",
+      "severity": "major",
+      "reasoning": "Bounded premortem on the single effort. It is some months later and Anchor is running against real user projects. The summary panel that here reads '(none discovered)' despite two tracked efforts is not a fixture curiosity but a live rendering rule: the panel is regenerated from a fresh filesystem scan and does not merge the persisted pointer-record index. In production, a user who moves, renames, or deletes a discovered source file (or whose artifacts live outside the scan root) will see the panel silently drop efforts the store still tracks — and, because the panel is the trusted at-a-glance surface, will conclude work is absent when the index says otherwise, or act on undercounted lanes. The dangling-pointer state in this very fixture is a concrete instance of the divergence arriving.",
+      "verdict": "The panel/store divergence seen here will resurface in production as silent under-reporting whenever discovered artifacts leave the scan path, eroding trust in the summary surface.",
+      "future_state_condition": "In a real project, the rendered summary panel reports fewer (or zero) discovered efforts than the persisted pointer-record index actually tracks, and a user acts on the undercount.",
+      "enabling_assumption": "Anchor.md / discovery.json are regenerated by a fresh filesystem scan that never reconciles against — or flags drift from — the persisted pointer-record index."
+    }
+  ],
+  "nitpicks": [
+    {
+      "id": "n-1",
+      "rung": "OBSERVED",
+      "reasoning": "The two pointer records carry created_at = 1000.0 and 1001.0 — obviously synthetic monotonic test timestamps, not real epoch times — confirming the store was hand-seeded by the test rather than produced by a live discovery run.",
+      "verdict": "Synthetic created_at (1000.0/1001.0) confirms a test-seeded pointer store."
+    },
+    {
+      "id": "n-2",
+      "rung": "OBSERVED",
+      "reasoning": "gandalf/index.json records THIS run as in_progress (ok:false, degraded:true, status 'running') — the fixture is observing its own analysis; the empty gandalf/run-1784040574086 dir is where this report is being written.",
+      "verdict": "The gandalf index is watching the current run; harmless but worth noting for provenance."
+    }
+  ],
+  "elevations": [
+    {
+      "id": "e-1",
+      "value_if_true": "medium",
+      "rung": "CLAIMED",
+      "severity": "major",
+      "reasoning": "Make the summary panel render from the reconciled UNION of the live scan and the persisted pointer-record index — or, at minimum, emit an explicit drift flag — so it becomes structurally impossible for Anchor.md to show '(none discovered)' while planning/index.json is non-empty. The panel is the trusted at-a-glance surface; a scan-only generator that ignores the durable index will always be able to silently under-report. Rendering the union (and marking store-only efforts as 'tracked, artifact missing') turns today's silent gap into a visible, actionable state.",
+      "verdict": "Render the panel from scan∪index (with drift flagged), not scan-only, so the panel can never under-report the durable store.",
+      "what_would_refute_it": "If Anchor.md is intentionally a scan-only view and the pointer-record index is surfaced to the user through a separate, authoritative panel, the divergence is by-design separation of concerns rather than a defect, and unioning would conflate two deliberately distinct views."
+    },
+    {
+      "id": "e-2",
+      "value_if_true": "medium",
+      "rung": "CLAIMED",
+      "severity": "minor",
+      "reasoning": "Add dangling-pointer validation: when a pointer record's artifact_path no longer resolves on disk, mark the record stale/broken (a tombstone state) instead of leaving it to be silently counted by one surface and silently ignored by another. This gives the two surfaces a shared, explicit notion of 'tracked but missing', which is the precise state this fixture is in and which currently produces contradictory reports.",
+      "verdict": "Validate pointer artifact_path resolution and give unresolved records an explicit stale/tombstone state shared by all render surfaces.",
+      "what_would_refute_it": "If pointer records are deliberately designed to outlive their artifacts as durable historical tombstones, then pruning or re-labeling them as 'broken' would destroy intended history and the current silent retention is correct."
+    }
+  ]
+}

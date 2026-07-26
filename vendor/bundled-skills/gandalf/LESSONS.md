@@ -7,7 +7,7 @@
 
 ## The anti-drift sleep gate (the rule that keeps Gandalf on its North Star)
 
-**Canary set = the test suite.** The deterministic done-floor IS `node --test test/*.test.mjs`. There
+**Canary set = the test suite.** The deterministic done-floor IS `node --test test/*.test.mjs test/mapreduce/*.test.mjs` (the mapreduce dir holds real --analyze-path canaries; a non-recursive glob silently excluded them until 2026-07-25). There
 is no second, hidden gate.
 
 **The sleep gate:** before any Gandalf cycle is considered DONE — before the skill "sleeps" / ships /

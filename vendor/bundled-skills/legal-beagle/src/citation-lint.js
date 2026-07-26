@@ -58,6 +58,65 @@ export function lintCitations(findingsText, sourceTexts = []) {
   return { ok: violations.length === 0, violations };
 }
 
+// ── PROPOSITION-LEVEL grounding (P2 2026-07-25 — the hardening the 07-25 review
+// asked for). The substring check above proves only that the CITATION TOKEN appears
+// somewhere in the pack — journal 0001's wrong-reporter cite (Powell: 148 T.C. 392,
+// not 145 T.C. 411) is exactly the class it misses when a pack mentions both. The
+// proposition check requires each citation's PARAGRAPH to carry a QUOTED SPAN
+// ("..." / “...” , ≥ MIN_QUOTE_CHARS) that appears VERBATIM (whitespace-normalized)
+// in a source — i.e. the memo shows the reader the words of the authority it leans
+// on, and those words really are in the pack. [UNVERIFIED] on the line still exempts.
+
+export const MIN_QUOTE_CHARS = 15;
+
+function paragraphsOf(text) {
+  const lines = String(text).split(/\r?\n/);
+  const paras = [];
+  let start = 0;
+  for (let i = 0; i <= lines.length; i++) {
+    if (i === lines.length || lines[i].trim() === '') {
+      if (i > start) paras.push({ startLine: start + 1, endLine: i, text: lines.slice(start, i).join('\n') });
+      start = i + 1;
+    }
+  }
+  return paras;
+}
+
+function quotedSpans(text) {
+  const spans = [];
+  for (const m of String(text).matchAll(/["“]([^"”]{1,600}?)["”]/g)) {
+    if (m[1].trim().length >= MIN_QUOTE_CHARS) spans.push(m[1].trim());
+  }
+  return spans;
+}
+
+/**
+ * Proposition-level lint: for each citation, its enclosing paragraph must contain at
+ * least one ≥15-char quoted span found verbatim (whitespace-normalized) in a source.
+ * Returns { ok, checked, violations: [{citation, line, reason}] }.
+ */
+export function lintPropositions(findingsText, sourceTexts = []) {
+  const sources = sourceTexts.map(norm);
+  const paras = paragraphsOf(findingsText);
+  const violations = [];
+  let checked = 0;
+  for (const c of extractCitations(findingsText)) {
+    if (/\[unverified\b/i.test(c.lineText)) continue;
+    checked += 1;
+    const para = paras.find((p) => c.line >= p.startLine && c.line <= p.endLine);
+    const spans = para ? quotedSpans(para.text) : [];
+    if (!spans.length) {
+      violations.push({ ...c, reason: `no quoted span (≥${MIN_QUOTE_CHARS} chars) in the citation's paragraph — quote the authority, then analyze` });
+      continue;
+    }
+    const supported = spans.some((q) => sources.some((s) => s.includes(norm(q))));
+    if (!supported) {
+      violations.push({ ...c, reason: 'the paragraph quotes text that appears in NO provided source — the proposition is not grounded in the pack' });
+    }
+  }
+  return { ok: violations.length === 0, checked, violations };
+}
+
 // ---- CLI ----
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';

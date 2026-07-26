@@ -37,8 +37,18 @@ node bin/jumper-run.mjs --problem "<statement>" --depth FULL --fan-out <ideaRoun
 - **Model seats are pre-decided** (invocation discipline): drafter/ideation = Claude; Gate 3 =
   Gemini via agy (`JUMPER_GATE3_DRIVER` overrides the driver, never the independence rule).
 - **HALTs are honest outcomes, not bugs**: `JumperSelfReviewHalt` = Gate 3 resolved to the drafter
-  family (fix the route); `JumperCrossFamilyDegradeHalt` = agy down (Jumper NEVER silently
-  self-reviews — rerun when agy is back).
+  family (fixed at PRE-FLIGHT since 2026-07-25 — the CLI refuses in under a second, before any
+  paid seat; fix model prefs or pass `--no-live-refuter` for an honest single-family run);
+  `JumperCrossFamilyDegradeHalt` = agy down (Jumper NEVER silently self-reviews — rerun when agy
+  is back); `RefuterBudgetHalt` = more firing elevations than the refuter budget (prereg R=3) —
+  raise it with **`--budget N`** (journals 0003/0012: this HALT killed two tournaments when the
+  dial didn't exist). `--no-live-refuter` floors elevations to SPECULATIVE honestly.
+- **Watch the heartbeats** (2026-07-25): the CLI streams `jumper: gandalf:start|done`,
+  `sphere:i/n`, `killfilter:candidate i/n …` to stderr — a healthy long run is visibly moving;
+  silence for many minutes is the anomaly (journal 0014's false-DONE came from this blindness).
+- **NG canaries are executable** (`test/ng-canaries.test.mjs` + `canaries/canary-set.v2.json`):
+  no gate-bypass option exists, pre-stamped tiers get re-graded, same-sphere survivors are
+  never relabeled as diverse.
 - Do NOT run the tripartite pipeline "by hand" in prose — an improvised run bypasses the
   commission ledger, the cross-family gate, and every honesty stamp. The engine or nothing.
 - Every CLI run auto-writes a training record to `journal/runs/` (AGENTS.md "Run capture");

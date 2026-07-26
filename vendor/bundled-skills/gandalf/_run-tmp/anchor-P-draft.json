@@ -1,0 +1,84 @@
+{
+  "reasoning": "The target is not a product project at all — it is an ephemeral pytest tmp fixture (`test_summary_panel_no_leaked_b0/P`) created by Anchor's own test suite. Structure, synthetic timestamps (created_at 1000.0/1001.0), and the folder name make the intent explicit: assert that Anchor's 'summary panel' (the committed Anchor.md plus the internal discovery.json) carries STRUCTURE ONLY and leaks no file contents, secrets, absolute paths, or PII. Read against that intent, the tracked surface is clean: Anchor.md for project 'W6Braces' (id 69fde9...) shows all four lanes at 0 runs and '(none discovered)', with no path or content. That much is sound. The interesting signal is below the committed surface, in the disagreement between two internal views of the same state and in the leak-surface that the guarantee actually rests on. planning/index.json registers two effort pointers (disc-fa5..., disc-b7f...) whose artifact_path values (planning/brownfield-discovery/MASTER-PLAN.md and NOTES.md) do not exist anywhere in this tree, while discovery.json reports counts.planning = 0 and by_lane.planning = []. So the effort index and the discovery scan describe the same project differently, and the human-facing summary sides with the scan. Separately, discovery.json embeds the full absolute root path including the OS username 'john' — that is exactly the class of payload the store's README C10 policy keeps OUT of git-tracked artifacts, and it is fine here only because discovery.json lives under the gitignored .anchor/ subtree. The whole no-leak guarantee therefore rests on the C9-tracked / C10-ignored path split being correct for every writer — a static classification, not a content scan. Finally, gandalf/index.json shows this very run stuck at status 'running', in_progress true, ok false: a lifecycle entry with no visible completion or reaper. None of these are failures of the fixture's narrow assertion; they are the real observations a deep read surfaces once you stop treating an empty bootstrap as boring.",
+  "verdict": "Sound for its narrow purpose — the git-tracked summary surface (Anchor.md) is genuinely structure-only and leaks nothing — but two internal views of the project disagree (registered effort pointers vs a zero-count discovery scan, with the backing artifacts absent), and the no-leak property rests entirely on a static tracked/ignored path split rather than a content scan of what actually gets written.",
+  "findings": [
+    {
+      "id": "d-1",
+      "kind": "diagnose",
+      "rung": "OBSERVED",
+      "severity": "major",
+      "reasoning": "planning/index.json registers two effort pointers (disc-fa5a5183e2b4d680 -> planning/brownfield-discovery/MASTER-PLAN.md, disc-b7f90850337bb521 -> .../NOTES.md), but discovery.json reports counts.planning = 0 and by_lane.planning = [], and Anchor.md renders '(none discovered)'. Both backing artifact files are absent from the tree. Two internal views of the same project state therefore disagree, and the human-facing summary silently sides with the scanner.",
+      "verdict": "Registered efforts point at artifacts that do not exist and the discovery scan does not reflect them; the divergence is real and undisclosed to the reader of the summary."
+    },
+    {
+      "id": "d-2",
+      "kind": "diagnose",
+      "rung": "OBSERVED",
+      "severity": "major",
+      "reasoning": "discovery.json contains \"root\": \"C:\\\\Users\\\\john\\\\AppData\\\\Local\\\\Temp\\\\...\\\\P\" — a full absolute path carrying the OS username. The store README's C10 policy names 'absolute paths, tokens, or personal data' as precisely what must stay out of tracked/shipped artifacts. It is acceptable here ONLY because discovery.json sits under the gitignored .anchor/ subtree. The no-leak guarantee thus depends entirely on the C9-tracked / C10-ignored PATH split being correct for every writer; a single mis-placed writer that emits into a tracked location would leak the username/path, and nothing in the fixture performs a content scan to catch that.",
+      "verdict": "The no-leak invariant is enforced by static path classification, not by scanning artifact CONTENT — a brittle guarantee against the very PII it already stores."
+    },
+    {
+      "id": "d-3",
+      "kind": "diagnose",
+      "rung": "OBSERVED",
+      "severity": "minor",
+      "reasoning": "All lanes are 0 runs / 0 imported, discovery counts total 0, and pointer created_at values are synthetic (1000.0, 1001.0). This is a freshly-bootstrapped, empty Anchor project instantiated inside a pytest tmp path — a test artifact, not real user data.",
+      "verdict": "Correctly identified as an empty bootstrap fixture; no product content is at stake, which bounds the consequence of every other finding."
+    },
+    {
+      "id": "a-1",
+      "kind": "anticipate",
+      "rung": "UNVERIFIED",
+      "severity": "major",
+      "reasoning": "This gandalf run writes its report and advisor-output UNDER the project root at gandalf/run-1784040576489/, and that report necessarily embeds the absolute root path (with username). The tracked-surface no-leak property was only ever verified for Anchor.md; the gandalf/ output tree is a newer write path. If gandalf outputs are not covered by the same C10 ignore rules, a future `git add` of the project would commit PII the summary-panel test was designed to prevent.",
+      "verdict": "The leak the fixture guards against could re-enter through the gandalf output directory, a write path the original invariant did not contemplate.",
+      "future_state_condition": "A committed gandalf report in the repo history contains the absolute filesystem path and OS username.",
+      "enabling_assumption": "gandalf/ output artifacts fall outside the .anchor/ C10 gitignore coverage and are picked up by a broad `git add`."
+    },
+    {
+      "id": "a-2",
+      "kind": "anticipate",
+      "rung": "UNVERIFIED",
+      "severity": "minor",
+      "reasoning": "gandalf/index.json currently holds this run as in_progress:true, ok:false, status:'running'. If runs can terminate without writing a completion record and no reaper exists, the index will accumulate phantom 'running' entries over many test invocations, and any UI/summary that counts active runs will over-report.",
+      "verdict": "Absent a completion-write or timeout, the run index drifts toward showing perpetually-running ghosts.",
+      "future_state_condition": "The gandalf run index lists one or more runs stuck at status 'running' long after their process has exited.",
+      "enabling_assumption": "Run finalization depends on the model/host cleanly writing back, with no independent timeout or ownership-liveness reaper."
+    }
+  ],
+  "nitpicks": [
+    {
+      "id": "n-1",
+      "rung": "OBSERVED",
+      "reasoning": "Anchor.md's '_Last scanned_' timestamp (2026-07-14 08:49:36) and discovery.json generated_at (1784040576.47) are the same instant as the gandalf run ts (1784040576.489), confirming the summary and this read describe the same frozen snapshot — fine, but it means the report cannot observe any post-scan drift.",
+      "verdict": "Snapshot-consistent; no staleness signal available."
+    }
+  ],
+  "elevations": [
+    {
+      "id": "e-1",
+      "value_if_true": "medium",
+      "rung": "CLAIMED",
+      "severity": "major",
+      "reasoning": "Add a reconciliation assertion that cross-checks planning/index.json (and every lane index) against discovery.json counts AND verifies each pointer's artifact_path resolves on disk. Registered-but-absent efforts (exactly d-1) would then surface as an explicit integrity failure instead of a silent divergence the summary hides.",
+      "what_would_refute_it": "If Anchor intentionally allows pointers to reference not-yet-materialized (lazily/deferred or externally-stored) artifacts, then index-vs-scan divergence is by-design and such an assertion would fire false failures on legitimate deferred efforts."
+    },
+    {
+      "id": "e-2",
+      "value_if_true": "high",
+      "rung": "CLAIMED",
+      "severity": "major",
+      "reasoning": "Make the no-leak guarantee defense-in-depth: run a content leak-scanner (absolute-path / username / token regex) over any artifact IMMEDIATELY BEFORE it is written to a git-trackable location, rather than relying solely on the C9/C10 path classification. This converts the invariant the test checks from 'we put it in the right folder' to 'the bytes contain no PII', closing the gap in d-2.",
+      "what_would_refute_it": "If the Wave-8 distribution build already scans every write path (including gandalf/ outputs) for absolute paths/tokens before shipping, a second runtime content scan is redundant and only adds cost."
+    },
+    {
+      "id": "e-3",
+      "value_if_true": "medium",
+      "rung": "CLAIMED",
+      "severity": "minor",
+      "reasoning": "Give gandalf/index.json 'running' entries a heartbeat/timeout so a crashed or abandoned run (the current in_progress:true, ok:false, status:'running' entry) is detectable and reapable, instead of accumulating phantom-running records with no completion.",
+      "what_would_refute_it": "If the zombie-hunter / Anchor control surface already reaps stale gandalf runs by ownership-based liveness, the stuck entry is transient and a per-index timeout adds nothing."
+    }
+  ]
+}

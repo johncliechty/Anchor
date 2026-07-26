@@ -1,7 +1,28 @@
 {
   "gate1Prompt": {
     "artifactPath": "<RUN_DIR>/triage-<TRIAGE_HASH>.json",
-    "triageHash": "<TRIAGE_HASH>"
+    "triageHash": "<TRIAGE_HASH>",
+    "extension": {
+      "skill": "researchPrime",
+      "stamp": "ns01-w5-rp-intake-mapping",
+      "recommendation": {
+        "tier": "Heavy",
+        "depth": "FULL",
+        "rationale": "tier=Heavy (No clear case for Standard (scope=unknown, depth=FULL) ⇒ Heavy by default — when uncertain, prefer frontier seats; this is a recommendation with explicit rationale, not a silent lock). depth=FULL (No clear case for a lighter path (scope=unknown, unknowns=0) ⇒ FULL by default — when uncertain, the safe move is full machinery, never a silent downgrade).",
+        "defaulted": true
+      },
+      "triage": null,
+      "knobs": {
+        "maxRounds": 8,
+        "includeAdjudication": true,
+        "seats": "frontier",
+        "ceremony": "full",
+        "skill": "researchPrime",
+        "depth": "FULL",
+        "tier": "Heavy"
+      },
+      "locked": false
+    }
   },
   "gate1PromptCount": 1,
   "gate2Prompt": {
@@ -18,7 +39,37 @@
       "objective": "Wave-5 RP golden gate fence (literature-review)",
       "planProse": "# Research Plan — Wave-5 RP golden gate fence\n\n## Scope / AXIS\nPin the frozen researchPrime plan-review gate behind a golden-output regression fence.\nAXIS: any drift in a gate record, stamp, or prompt payload FAILS the suite.\n\n## Seeds\n- (seed) 10.1000/wave5-golden-doi — Golden Fence Seed Paper"
     },
-    "timestamp": "<TIMESTAMP>"
+    "timestamp": "<TIMESTAMP>",
+    "stamp": "ns01-w5-rp-intake-mapping",
+    "extension": {
+      "skill": "researchPrime",
+      "stamp": "ns01-w5-rp-intake-mapping",
+      "recommendation": {
+        "tier": "Heavy",
+        "depth": "FULL",
+        "rationale": "tier=Heavy (No clear case for Standard (scope=unknown, depth=FULL) ⇒ Heavy by default — when uncertain, prefer frontier seats; this is a recommendation with explicit rationale, not a silent lock). depth=FULL (No clear case for a lighter path (scope=unknown, unknowns=0) ⇒ FULL by default — when uncertain, the safe move is full machinery, never a silent downgrade).",
+        "defaulted": true
+      },
+      "triage": {
+        "locked": true,
+        "tier": "Heavy",
+        "depth": "FULL",
+        "rationale": "researchPrime Gate-1 APPROVE: tier=Heavy depth=FULL",
+        "source": "interactive",
+        "lockedAt": "<TIMESTAMP>"
+      },
+      "knobs": {
+        "maxRounds": 8,
+        "includeAdjudication": true,
+        "seats": "frontier",
+        "ceremony": "full",
+        "skill": "researchPrime",
+        "depth": "FULL",
+        "tier": "Heavy"
+      },
+      "locked": true
+    },
+    "gate1Decision": "APPROVE"
   },
   "planFile": {
     "planVersion": "litreview-brownfield-plan/golden-wave5-1",
@@ -26,7 +77,10 @@
   },
   "gate1Record": {
     "triageHash": "<TRIAGE_HASH>",
-    "gate1Decision": "APPROVE"
+    "gate1Decision": "APPROVE",
+    "triageExtensionStamp": "ns01-w5-rp-intake-mapping",
+    "triageDepth": "FULL",
+    "triageTier": "Heavy"
   },
   "gate2Record": {
     "planHash": "<PLAN_HASH>",

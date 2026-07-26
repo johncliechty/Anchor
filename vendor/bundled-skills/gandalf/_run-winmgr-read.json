@@ -1,0 +1,141 @@
+{
+  "schema_version": "gandalf-advisor-1",
+  "cross_model": false,
+  "cross_model_requested": false,
+  "degraded": false,
+  "reasoning": "TRIAGE — TYPE: mixed ('project' folder), but the deep-structure read is that this is not a genuine project: it is a pytest fixture. The path is the tell — pytest-of-john/pytest-3036/test_window_manager_wires_wave0/P — a pytest tmp_path tree materialized by Anchor's own test suite to exercise whether the WINDOW MANAGER correctly WIRES a wave0 advisor run into the per-project store; 'P' is the project dir. SIZE/STAKES: tiny, low. Depth: LIGHT. The honest and most valuable move is to name the category correctly rather than manufacture depth against an empty scaffold. Evidence: Anchor.md reports 0 runs / 0 imported across research, planning, build, deliverables and '(none discovered)'; .anchor/projects/<id>/discovery.json shows every lane count = 0 (research, planning, build, deliverables, grass, gandalf) and total = 0; CLAUDE.md is the stock 'R&D project managed by Anchor' boilerplate (repeated at every level of the temp tree); git holds exactly one commit, 'Initial commit (Anchor bootstrap)', and tracks ONLY CLAUDE.md. The one 'live' signal is gandalf/index.json, which pre-registers THIS very run (run-1784040568617, status 'running', in_progress:true, ok:false, degraded:true, tier 'standard') BEFORE any report exists — i.e. the window manager wires the run record first and the analysis fills it in, and the fixture is watching its own analysis happen. That pre-registration ordering IS the behavior under test (wave0 wiring). One genuinely substantive finding survives the emptiness: the .anchor/README states a C9 durability policy — pointer-records are committed so effort history is durable across restarts — yet `git status` shows .anchor/ and Anchor.md UNTRACKED after the bootstrap commit (git ls-files = CLAUDE.md only), a stated-vs-actual contradiction worth flagging in case it reflects real Anchor bootstrap behavior and not just test scaffolding. SITUATE was NOT performed: the firing gate requires a central load-bearing claim, a plausible better-in-class frame, AND stakes >= medium; none hold for an empty test fixture, so SITUATE is skipped and stamped. OPERATOR-WRONG pass: the operator aimed a rigorous deep-think advisor at an empty scaffold; the finding against that intent is that there is no artifact-of-substance to diagnose, and the correct output is to say so plainly, not to pad. Verdict is therefore not 'this is sound' (there is no effort to be sound) and not 'broken' — it is 'category: test fixture, essentially empty; almost nothing to review, plus the window-manager wiring is observably functioning and one real policy-consistency flag'.",
+  "verdict": "This is not a real project but a pytest fixture (Anchor's 'window_manager wires wave0' test) — a functionally empty bootstrap scaffold whose gandalf run record is pre-wired by the window manager before this analysis runs; there is essentially nothing of substance to analyze, with one genuine flag: the stated commit-for-durability (C9) policy appears contradicted by the untracked .anchor/ and Anchor.md state.",
+  "findings": [
+    {
+      "id": "d-1",
+      "rung": "OBSERVED",
+      "kind": "diagnose",
+      "severity": "major",
+      "gandalf_core": {
+        "protocol": "PROTOCOL v2"
+      },
+      "reasoning": "The target is a pytest temporary fixture, not a genuine effort. The path pytest-of-john/pytest-3036/test_window_manager_wires_wave0/P is a pytest tmp_path tree; 'test_window_manager_wires' names the test, 'wave0' is the phase/parametrization under test, and 'P' is the seeded project dir. Reviewing it 'as a project' is a category error; the honest read is that this is a synthetic test artifact exercising Anchor's window-manager run-wiring.",
+      "verdict": "Target is a synthetic pytest fixture exercising Anchor's window-manager wave0 run-wiring, not a real project."
+    },
+    {
+      "id": "d-2",
+      "rung": "OBSERVED",
+      "kind": "diagnose",
+      "severity": "minor",
+      "gandalf_core": {
+        "protocol": "PROTOCOL v2"
+      },
+      "reasoning": "The scaffold is functionally empty. Anchor.md: 0 runs / 0 imported in every lane and '(none discovered)'. discovery.json: all lane counts 0 (research, planning, build, deliverables, grass, gandalf), total 0. CLAUDE.md is stock boilerplate. Exactly one git commit (Anchor bootstrap), tracking only CLAUDE.md. There is no research, plan, build output, or deliverable to diagnose beyond the scaffold itself.",
+      "verdict": "No substantive content exists across any lane — nothing to review beyond the bootstrap scaffold."
+    },
+    {
+      "id": "d-3",
+      "rung": "OBSERVED",
+      "kind": "diagnose",
+      "severity": "major",
+      "gandalf_core": {
+        "protocol": "PROTOCOL v2"
+      },
+      "reasoning": ".anchor/README states the C9 policy: 'Tracked (C9): small JSON pointer-records that index efforts/versions — these are committed so effort history is durable across restarts.' But `git status --porcelain` shows '?? .anchor/' and '?? Anchor.md' and `git ls-files` returns only CLAUDE.md — the pointer-records the policy promises to persist are untracked after the bootstrap commit. In this fixture that may be intentional (the test asserts a fresh registered state before wiring), but IF the same sequencing exists in real Anchor bootstrap, the durability guarantee would not hold: a restart before a later commit would lose the effort index and the gandalf run pointer. Worth confirming against production behavior.",
+      "verdict": "Stated commit-for-durability (C9) policy is contradicted by the actual untracked .anchor/ and Anchor.md state — verify this is fixture-only and not real bootstrap behavior."
+    },
+    {
+      "id": "d-4",
+      "rung": "OBSERVED",
+      "kind": "diagnose",
+      "severity": "minor",
+      "gandalf_core": {
+        "protocol": "PROTOCOL v2"
+      },
+      "reasoning": "gandalf/index.json already contains a record for THIS run (run-1784040568617) with status 'running', in_progress:true, ok:false, degraded:true, and null report/exec/advisor pointers — written by the window manager BEFORE the report exists. This confirms the wave0 wiring under test is functioning: the run pointer is minted up front and is expected to be reconciled (ok/verdict/report_rel filled) on completion. The observable risk is a durability one only: if the run terminates between pre-registration and reconciliation, the index is left with a dangling in_progress:true record.",
+      "verdict": "Window-manager wave0 wiring is observably working — the run pointer is pre-registered and awaits reconciliation on completion."
+    },
+    {
+      "id": "a-1",
+      "rung": "UNVERIFIED",
+      "kind": "anticipate",
+      "subject_cardinality": 1,
+      "future_state_condition": "The gandalf/trio run indices are populated mostly by degraded runs fired against empty or near-empty projects, and stale in_progress:true records from runs that died before reconciliation.",
+      "enabling_assumption": "No pre-run emptiness gate exists and no crash-reconciliation sweep runs, so advisor runs dispatch a full graded pass regardless of whether the project has any discoverable artifacts, and pre-registered pointers are never garbage-collected.",
+      "severity": "minor",
+      "reasoning": "It is some months on and Anchor routinely lets graded advisor runs fire against freshly-registered, still-empty projects. Each produces a degraded, low-value run record — exactly like the ok:false / degraded:true entry already sitting in this fixture's gandalf/index.json. Accumulated, these dilute the index with non-signal and quietly erode trust in the verdict/tier stamps that are the whole point of the honesty-graded design. The author has not yet needed an 'is there anything here to analyze?' precondition because at bootstrap the pain is invisible.",
+      "verdict": "Empty-target advisor runs will accumulate degraded, low-value records that erode trust in the graded signal."
+    }
+  ],
+  "nitpicks": [
+    {
+      "id": "n-1",
+      "rung": "OBSERVED",
+      "reasoning": "CLAUDE.md is identical stock boilerplate ('R&D project managed by Anchor — research/plan/build via the trio') repeated at every level of the temp tree; it conveys nothing project-specific.",
+      "verdict": "Boilerplate CLAUDE.md adds no per-project signal."
+    },
+    {
+      "id": "n-2",
+      "rung": "OBSERVED",
+      "reasoning": "Anchor.md's title 'Wired' and CLAUDE.md's 'Wired' are the only per-project string; there is no captured objective / North Star for the project, so any downstream trio or advisor run has nothing to anchor to.",
+      "verdict": "No project objective is captured — 'Wired' is a bare name with no intent."
+    }
+  ],
+  "elevations": [
+    {
+      "id": "e-1",
+      "rung": "CLAIMED",
+      "value_if_true": "medium",
+      "severity": "minor",
+      "what_would_refute_it": "If empty-project advisor runs are deliberately wanted — e.g. to validate the scaffold/window-manager wiring itself or to smoke-test the pipeline (which is exactly what this fixture does) — then an emptiness gate would suppress a signal the operator relies on.",
+      "tier": "SPECULATIVE",
+      "no_independent_refutation": true,
+      "refutation_stamp": "no independent refutation ran",
+      "reasoning": "Add a fast pre-analysis emptiness gate to Anchor's advisor dispatch: before minting a graded run, read discovery counts; if total artifacts == 0, return a cheap 'nothing to analyze yet — register/produce an artifact first' result instead of a full degraded pass. This keeps the run indices clean and preserves the meaning of the honesty stamps. Directly addresses a-1.",
+      "verdict": "Gate graded advisor runs on non-empty discovery to keep the run index and tier signal meaningful."
+    },
+    {
+      "id": "e-2",
+      "rung": "CLAIMED",
+      "value_if_true": "medium",
+      "severity": "major",
+      "what_would_refute_it": "If Anchor already runs a liveness/orphan reaper (e.g. the zombie-hunter control plane) that reconciles or reaps in_progress records on the next scan, then stale ghosts are already handled and no new sweep is needed.",
+      "tier": "SPECULATIVE",
+      "no_independent_refutation": true,
+      "refutation_stamp": "no independent refutation ran",
+      "reasoning": "Reconcile the pre-registered run pointer transactionally, or add a startup sweep that marks orphaned in_progress:true records as 'failed/abandoned'. The window manager wires the run record BEFORE the analysis (d-4); if the process dies between pre-registration and reconciliation, gandalf/index.json is left asserting a run is still 'running' forever, corrupting the very durability the C9 policy exists to protect.",
+      "verdict": "Add crash-safe reconciliation / a stale-run sweep so a died-mid-run advisor never leaves a permanent in_progress:true ghost in the index."
+    },
+    {
+      "id": "e-3",
+      "rung": "CLAIMED",
+      "value_if_true": "medium",
+      "severity": "major",
+      "what_would_refute_it": "If Anchor deliberately commits pointer-records only lazily (on first real run) and this untracked state is a transient, expected bootstrap window, then the guarantee holds and no fix is needed.",
+      "tier": "SPECULATIVE",
+      "no_independent_refutation": true,
+      "refutation_stamp": "no independent refutation ran",
+      "reasoning": "Confirm and, if needed, fix the C9 durability sequencing surfaced in d-3: ensure Anchor's bootstrap actually commits the tracked pointer-records (.anchor pointer JSON + Anchor.md) rather than leaving them untracked, so effort history genuinely survives a restart as the README promises.",
+      "verdict": "Verify bootstrap commits the C9 pointer-records so the durability guarantee is real, not just documented."
+    },
+    {
+      "id": "e-4",
+      "rung": "CLAIMED",
+      "value_if_true": "low",
+      "severity": "minor",
+      "what_would_refute_it": "If the registration flow intentionally defers objective authoring to a later explicit trio intake step, forcing content at register time would add friction without value.",
+      "tier": "SPECULATIVE",
+      "no_independent_refutation": true,
+      "refutation_stamp": "no independent refutation ran",
+      "reasoning": "Capture a real one-line project intent / North Star at registration into CLAUDE.md / Anchor.md rather than leaving stock boilerplate + a bare name. Downstream trio and advisor runs are only as good as the objective they can anchor to; an empty intent guarantees degraded situate/plan phases.",
+      "verdict": "Capture a real project objective at registration so downstream trio/advisor runs have something to anchor to."
+    }
+  ],
+  "risk_labels": [
+    {
+      "leg": "diagnose",
+      "tier": "PROMISING",
+      "rung": "OBSERVED"
+    },
+    {
+      "leg": "anticipate",
+      "tier": "PROMISING",
+      "rung": "UNVERIFIED"
+    }
+  ]
+}

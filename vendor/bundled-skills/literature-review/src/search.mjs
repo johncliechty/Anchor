@@ -234,6 +234,61 @@ export function generateMermaidGraph(nodes, edges) {
   return mermaid;
 }
 
+// ── OpenAlex fallback provider (P2 2026-07-25 — the North-Star breadth ask AND the
+// cure for single-provider total outage: journal 0001's only real run died with S2).
+// When an S2 reference expansion fails AFTER real retries, the walk falls back to
+// OpenAlex BY TITLE: /works?search=<title> → referenced_works → one batched hydrate.
+// Fallback papers carry `openalex:`-prefixed ids and re-expand via OpenAlex; every
+// fallback is RECORDED (provider stamped) — a provider switch is never silent.
+
+export async function fetchReferencesOpenAlex(title, options = {}) {
+  const base = 'https://api.openalex.org';
+  const enc = encodeURIComponent(String(title).slice(0, 300));
+  const sRes = await fetchWithBackoff(`${base}/works?search=${enc}&per-page=1`, options);
+  const sData = await sRes.json();
+  const work = sData?.results?.[0];
+  if (!work || !Array.isArray(work.referenced_works) || !work.referenced_works.length) return [];
+  const ids = work.referenced_works.slice(0, 50).map((u) => String(u).split('/').pop());
+  const fRes = await fetchWithBackoff(
+    `${base}/works?filter=openalex_id:${ids.join('|')}&per-page=${ids.length}`, options);
+  const fData = await fRes.json();
+  return (fData?.results ?? []).map((w) => ({
+    paperId: `openalex:${String(w.id).split('/').pop()}`,
+    title: w.title ?? w.display_name ?? 'Untitled',
+    venue: w.primary_location?.source?.display_name ?? w.host_venue?.display_name ?? 'Unknown',
+    year: w.publication_year ?? null,
+    citationCount: w.cited_by_count ?? 0,
+    authors: (w.authorships ?? []).map((a) => ({ name: a.author?.display_name ?? '?' })),
+    openAccessPdf: w.open_access?.oa_url ? { url: w.open_access.oa_url } : null,
+    abstract: null,
+    provider: 'openalex',
+  }));
+}
+
+/** Expand one OpenAlex-id paper's references (the openalex: re-expansion route). */
+export async function expandOpenAlexId(openAlexId, options = {}) {
+  const base = 'https://api.openalex.org';
+  const id = String(openAlexId).replace(/^openalex:/, '');
+  const res = await fetchWithBackoff(`${base}/works/${id}`, options);
+  const w = await res.json();
+  if (!Array.isArray(w?.referenced_works) || !w.referenced_works.length) return [];
+  const ids = w.referenced_works.slice(0, 50).map((u) => String(u).split('/').pop());
+  const fRes = await fetchWithBackoff(
+    `${base}/works?filter=openalex_id:${ids.join('|')}&per-page=${ids.length}`, options);
+  const fData = await fRes.json();
+  return (fData?.results ?? []).map((x) => ({
+    paperId: `openalex:${String(x.id).split('/').pop()}`,
+    title: x.title ?? x.display_name ?? 'Untitled',
+    venue: x.primary_location?.source?.display_name ?? 'Unknown',
+    year: x.publication_year ?? null,
+    citationCount: x.cited_by_count ?? 0,
+    authors: (x.authorships ?? []).map((a) => ({ name: a.author?.display_name ?? '?' })),
+    openAccessPdf: x.open_access?.oa_url ? { url: x.open_access.oa_url } : null,
+    abstract: null,
+    provider: 'openalex',
+  }));
+}
+
 /**
  * Performs a depth-bounded citation snowball search starting from seedEntityId.
  */
@@ -246,20 +301,30 @@ export async function performSnowballSearch(seedEntityId, venueWhitelist, option
   const visited = new Set();
   const queue = [];
   const fetchFailures = []; // P1 2026-07-25: honest record of truncated expansions
+  const providerFallbacks = []; // P2 2026-07-25: OpenAlex fallbacks, stamped never silent
 
-  // Fetch seed paper details first
-  try {
-    const seedUrl = `https://api.semanticscholar.org/graph/v1/paper/${seedEntityId}?fields=title,venue,year,citationCount,authors,openAccessPdf,abstract`;
-    const res = await fetchWithBackoff(seedUrl, { fetch: customFetch, ...options });
-    const data = await res.json();
-    if (data && data.paperId) {
-      allPapers.set(data.paperId, data);
-      queue.push({ paperId: data.paperId, depth: 0 });
-      visited.add(data.paperId);
+  // Seed entry. P2 2026-07-25: when the caller already HOLDS the seed metadata
+  // (ingest resolved it), `options.seedPaper` skips one fragile network call — and
+  // gives the OpenAlex by-title fallback a title to work with from round one.
+  if (options.seedPaper && options.seedPaper.paperId) {
+    allPapers.set(options.seedPaper.paperId, options.seedPaper);
+    queue.push({ paperId: options.seedPaper.paperId, depth: 0 });
+    visited.add(options.seedPaper.paperId);
+  } else {
+    // Fetch seed paper details first
+    try {
+      const seedUrl = `https://api.semanticscholar.org/graph/v1/paper/${seedEntityId}?fields=title,venue,year,citationCount,authors,openAccessPdf,abstract`;
+      const res = await fetchWithBackoff(seedUrl, { fetch: customFetch, ...options });
+      const data = await res.json();
+      if (data && data.paperId) {
+        allPapers.set(data.paperId, data);
+        queue.push({ paperId: data.paperId, depth: 0 });
+        visited.add(data.paperId);
+      }
+    } catch (err) {
+      // If the seed paper cannot be loaded, we fail or handle gracefully. Let's throw if seed cannot be resolved.
+      throw new Error(`Failed to fetch seed paper metadata: ${err.message}`);
     }
-  } catch (err) {
-    // If the seed paper cannot be loaded, we fail or handle gracefully. Let's throw if seed cannot be resolved.
-    throw new Error(`Failed to fetch seed paper metadata: ${err.message}`);
   }
 
   // Traversal loop (BFS)
@@ -272,14 +337,25 @@ export async function performSnowballSearch(seedEntityId, venueWhitelist, option
       continue;
     }
 
-    // Fetch references of current paper
+    // Fetch references of current paper. `openalex:` ids re-expand via OpenAlex;
+    // an S2 failure falls back to OpenAlex-by-title before being recorded as a loss.
     try {
-      const refUrl = `https://api.semanticscholar.org/graph/v1/paper/${paperId}/references?fields=title,venue,year,citationCount,authors,openAccessPdf,abstract`;
-      const res = await fetchWithBackoff(refUrl, { fetch: customFetch, ...options });
-      const responseData = await res.json();
-      
-      // Parse references (accepts data.data or data.references or raw array)
-      const refs = responseData.data || responseData.references || [];
+      let refs;
+      if (String(paperId).startsWith('openalex:')) {
+        refs = await expandOpenAlexId(paperId, { fetch: customFetch, ...options });
+      } else {
+        try {
+          const refUrl = `https://api.semanticscholar.org/graph/v1/paper/${paperId}/references?fields=title,venue,year,citationCount,authors,openAccessPdf,abstract`;
+          const res = await fetchWithBackoff(refUrl, { fetch: customFetch, ...options });
+          const responseData = await res.json();
+          refs = responseData.data || responseData.references || [];
+        } catch (s2err) {
+          const title = allPapers.get(paperId)?.title;
+          if (!title) throw s2err;
+          refs = await fetchReferencesOpenAlex(title, { fetch: customFetch, ...options });
+          providerFallbacks.push({ paperId, title, provider: 'openalex', s2_error: String(s2err?.message || s2err).slice(0, 200) });
+        }
+      }
       for (const item of refs) {
         const refPaper = item.citedPaper || item;
         if (!refPaper || !refPaper.paperId) continue;
@@ -383,5 +459,7 @@ export async function performSnowballSearch(seedEntityId, venueWhitelist, option
     mermaid,
     // P1 2026-07-25: non-empty ⇒ the evidence base is TRUNCATED (stamped, never silent).
     fetchFailures,
+    // P2 2026-07-25: non-empty ⇒ parts of the walk came via OpenAlex (stamped provider switch).
+    providerFallbacks,
   };
 }

@@ -1,0 +1,118 @@
+{
+  "schema_version": "gandalf-advisor-1",
+  "cross_model": false,
+  "cross_model_requested": false,
+  "degraded": false,
+  "reasoning": "TRIAGE — TYPE: mixed ('a project folder'), but the deep-structure read is that this is not a genuine project: it is a pytest fixture. The path is the tell — pytest-of-john/pytest-3036/test_close_then_reopen_is_fres0/P — a pytest tmp_path tree materialized by Anchor's own suite to exercise the 'close a project then reopen it and assert the reopened state is fresh' code path (test_close_then_reopen_is_fresh, truncated by the tmp-dir namer to ...fres0). SIZE/STAKES: tiny, low. Depth: LIGHT. The honest, most valuable move is to name the category correctly rather than manufacture depth against an empty scaffold. Evidence: Anchor.md reports 0 runs / 0 imported across all four lanes (research, planning, build, deliverables) and '(none discovered)'; .anchor/projects/<id>/discovery.json shows every lane count = 0, total = 0, truncated=false; CLAUDE.md is the stock 'R&D project managed by Anchor — research/plan/build via the trio' boilerplate repeated at every level of the temp tree; git holds exactly one commit, 'Initial commit (Anchor bootstrap)', and tracks only CLAUDE.md. The only 'live' signal is gandalf/index.json, which records THIS very run (run-1784040557273, status 'running', ok:false, degraded:true, tier 'standard') — the fixture is watching its own analysis happen, and the gandalf/ output directory is still empty awaiting this report. One genuinely substantive finding survives the emptiness: the .anchor/README states a C9 durability policy — pointer-records are 'committed so effort history is durable across restarts' — yet git shows .anchor/ and Anchor.md UNTRACKED after the bootstrap commit. That is directly load-bearing for THIS test's premise: a 'close then reopen is fresh' test that reopens from disk will genuinely observe a fresh (empty) state, but for the WRONG reason if the bootstrap simply never persisted the pointer-records — the test could pass while masking a real durability gap in production Anchor. SITUATE was NOT performed: the firing gate needs a central load-bearing claim, a plausible better-in-class frame I cannot already cite, AND stakes >= medium; none hold for an empty test fixture, so SITUATE is skipped and stamped. OPERATOR-WRONG pass: the operator aimed a rigorous deep-think advisor at an empty scaffold; the finding against that intent is that there is no artifact-of-substance to diagnose and the correct output is to say so plainly, not to pad. Verdict is therefore not 'this is sound' (there is no effort to be sound) and not 'broken' — it is 'category: test fixture, essentially empty; almost nothing to review, one real durability/consistency flag that matters to the very behavior under test'.",
+  "verdict": "This is not a real project but a pytest fixture for Anchor's 'close-then-reopen-is-fresh' test — a functionally empty bootstrap scaffold with zero artifacts in any lane; there is essentially nothing of substance to analyze, with one genuine flag: the README's stated commit-for-durability (C9) policy is contradicted by the untracked .anchor/ and Anchor.md state, which is directly relevant to the close/reopen freshness behavior this fixture exists to test.",
+  "findings": [
+    {
+      "id": "d-1",
+      "rung": "OBSERVED",
+      "kind": "diagnose",
+      "severity": "major",
+      "gandalf_core": {
+        "protocol": "PROTOCOL v2"
+      },
+      "reasoning": "The target is a pytest temporary fixture, not a genuine effort. The path pytest-of-john/pytest-3036/test_close_then_reopen_is_fres0/P is a pytest tmp_path tree: 'test_close_then_reopen_is_fres0' is the (truncated) test name test_close_then_reopen_is_fresh with pytest's per-run numeric suffix, and 'P' is the project folder the test registers. The whole tree is regenerated per test run. Reviewing it 'as a project' is a category error; the honest read is to identify it as a synthetic test artifact exercising Anchor's close/reopen-freshness path.",
+      "verdict": "Target is a synthetic pytest fixture exercising Anchor's close-then-reopen-is-fresh path, not a real project."
+    },
+    {
+      "id": "d-2",
+      "rung": "OBSERVED",
+      "kind": "diagnose",
+      "severity": "minor",
+      "gandalf_core": {
+        "protocol": "PROTOCOL v2"
+      },
+      "reasoning": "The scaffold is functionally empty. Anchor.md: 0 runs / 0 imported in research, planning, build, deliverables and '(none discovered)'. discovery.json: all lane counts 0, total 0, truncated=false. CLAUDE.md is stock boilerplate. Exactly one git commit (Anchor bootstrap), tracking only CLAUDE.md. There is no research, plan, build output, or deliverable to diagnose — only the Anchor control-surface scaffolding itself.",
+      "verdict": "No substantive content exists across any lane — nothing to review beyond the empty Anchor scaffold."
+    },
+    {
+      "id": "d-3",
+      "rung": "OBSERVED",
+      "kind": "diagnose",
+      "severity": "major",
+      "gandalf_core": {
+        "protocol": "PROTOCOL v2"
+      },
+      "reasoning": ".anchor/README states the C9 policy verbatim: 'Tracked (C9): small JSON pointer-records that index efforts/versions — these are committed so effort history is durable across restarts.' But git status shows .anchor/ and Anchor.md as UNTRACKED after the bootstrap commit; git ls-files returns only CLAUDE.md. The pointer-records the policy promises to persist are neither staged nor committed. This is directly load-bearing for the behavior this fixture tests: a 'close then reopen is fresh' assertion is satisfied trivially if bootstrap never persisted any state to reopen. If the same sequencing exists in production Anchor, a restart/reopen before a later explicit commit would silently lose the effort index — the durability guarantee would not hold, and this test would pass for the wrong reason. Worth confirming against real bootstrap behavior, not just the fixture.",
+      "verdict": "Stated C9 commit-for-durability policy is contradicted by the actual untracked .anchor/ + Anchor.md state — verify this is fixture-only and not a real bootstrap durability gap that the close/reopen test masks."
+    },
+    {
+      "id": "a-1",
+      "rung": "UNVERIFIED",
+      "kind": "anticipate",
+      "subject_cardinality": 1,
+      "future_state_condition": "The gandalf/trio run indices are populated mostly by degraded runs fired against empty or near-empty projects.",
+      "enabling_assumption": "No pre-run emptiness gate exists, so advisor runs dispatch a full graded pass regardless of whether the project has any discoverable artifacts.",
+      "severity": "minor",
+      "reasoning": "It is some months on and Anchor routinely lets graded advisor runs (gandalf and the trio) fire against freshly-registered, still-empty projects like this one. Each produces a degraded, low-value run record — exactly like the ok:false / degraded:true entry already sitting in this fixture's gandalf/index.json. Accumulated, these dilute the run indices with non-signal and quietly erode trust in the verdict/tier stamps that are the whole point of the honesty-graded design. The author has not yet needed an 'is there anything here to analyze?' precondition because at bootstrap the pain is invisible.",
+      "verdict": "Empty-target advisor runs will accumulate degraded, low-value records that erode trust in the graded signal."
+    }
+  ],
+  "nitpicks": [
+    {
+      "id": "n-1",
+      "rung": "OBSERVED",
+      "reasoning": "CLAUDE.md is identical stock boilerplate ('R&D project managed by Anchor — research/plan/build via the trio') repeated at every level of the temp tree; it conveys nothing project-specific.",
+      "verdict": "Boilerplate CLAUDE.md adds no per-project signal."
+    },
+    {
+      "id": "n-2",
+      "rung": "OBSERVED",
+      "reasoning": "The gandalf/ output directory exists but is empty at analysis time — the run index in .anchor already points at run-1784040557273 before its report/advisor artifacts are written, so any reader hitting the index mid-run sees a dangling in_progress pointer.",
+      "verdict": "Run index references an in-progress run whose output artifacts do not yet exist."
+    }
+  ],
+  "elevations": [
+    {
+      "id": "e-1",
+      "rung": "CLAIMED",
+      "value_if_true": "high",
+      "severity": "major",
+      "what_would_refute_it": "If Anchor deliberately commits pointer-records only lazily (on first real run) and the untracked bootstrap window is transient and expected — and the close/reopen test already round-trips through a real persist step elsewhere — then the guarantee holds and no fix is needed.",
+      "tier": "SPECULATIVE",
+      "no_independent_refutation": true,
+      "refutation_stamp": "no independent refutation ran",
+      "reasoning": "Confirm and, if needed, fix the C9 durability sequencing surfaced in d-3: ensure Anchor's bootstrap actually commits the tracked pointer-records (.anchor pointer JSON + Anchor.md) rather than leaving them untracked, so effort history genuinely survives a close/reopen as the README promises. Critically, strengthen the 'close then reopen is fresh' test itself: assert freshness against a state that was actually PERSISTED and reopened, not one that was never written — otherwise the test cannot distinguish 'correctly fresh' from 'never durable'.",
+      "verdict": "Verify bootstrap commits the C9 pointer-records and harden the close/reopen test to assert freshness over genuinely-persisted state, so the durability guarantee is real rather than merely documented."
+    },
+    {
+      "id": "e-2",
+      "rung": "CLAIMED",
+      "value_if_true": "medium",
+      "severity": "minor",
+      "what_would_refute_it": "If empty-project advisor runs are deliberately wanted — e.g. to validate the scaffold/bootstrap itself or to smoke-test the pipeline, which is plausibly exactly what THIS run is — then an emptiness gate would suppress a signal the operator actually relies on.",
+      "tier": "SPECULATIVE",
+      "no_independent_refutation": true,
+      "refutation_stamp": "no independent refutation ran",
+      "reasoning": "Add a fast pre-analysis emptiness gate to Anchor's advisor dispatch: before minting a graded run, read discovery counts; if total artifacts == 0, return a cheap 'nothing to analyze yet — register or produce an artifact first' result instead of a full degraded pass. This keeps the run indices clean and preserves the meaning of the honesty stamps. Directly addresses a-1.",
+      "verdict": "Gate graded advisor runs on non-empty discovery to keep the run index and tier signal meaningful."
+    },
+    {
+      "id": "e-3",
+      "rung": "CLAIMED",
+      "value_if_true": "medium",
+      "severity": "minor",
+      "what_would_refute_it": "If all index consumers already filter on status=='running'/in_progress and never dereference report_rel/advisor_rel until ok==true, the window is harmless and the change is unnecessary.",
+      "tier": "SPECULATIVE",
+      "no_independent_refutation": true,
+      "refutation_stamp": "no independent refutation ran",
+      "reasoning": "Write the run-index pointer atomically or in two phases: mark a run 'running' only after (or alongside) creating its output directory contents, or have readers treat in_progress pointers with missing artifacts as pending rather than broken. This removes the dangling-pointer window surfaced in n-2.",
+      "verdict": "Make run-index pointers robust to the in-progress window so mid-run readers never see a dangling reference."
+    }
+  ],
+  "risk_labels": [
+    {
+      "leg": "diagnose",
+      "tier": "PROMISING",
+      "rung": "OBSERVED"
+    },
+    {
+      "leg": "anticipate",
+      "tier": "PROMISING",
+      "rung": "UNVERIFIED"
+    }
+  ]
+}

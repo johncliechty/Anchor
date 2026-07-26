@@ -426,6 +426,32 @@ emitStatusTable('t=0');
 const statusTimer = setInterval(() => emitStatusTable(), 10 * 60 * 1000);
 if (typeof statusTimer.unref === 'function') statusTimer.unref();
 
+// P2 2026-07-25: `--attest-wave-proven` — the sanctioned finish for a verifiably-GREEN
+// wave the vacuous-guard cannot see (F-AT-1). Re-runs the REAL gate, verifies the
+// proven ledger's files live on disk, writes the signed attestation, advances the
+// checkpoint, and exits (run --resume afterward to continue the build).
+if (argv.includes('--attest-wave-proven')) {
+  const cpPath = path.join(PROJECT, 'foreman-checkpoint.json');
+  const { attestWaveProven } = await import(new URL('./project-engine.mjs', import.meta.url));
+  const { locateDocs, discoverTestCommand } = await import(new URL('./foreman-lib.mjs', import.meta.url));
+  try {
+    const docs = locateDocs(PROJECT);
+    const planAbs = path.isAbsolute(docs.plan) ? docs.plan : path.join(PROJECT, docs.plan);
+    const d = discoverTestCommand(fs.readFileSync(planAbs, 'utf8'), PROJECT);
+    const testCommand = d && typeof d === 'object' ? d.command : d;
+    const r = await attestWaveProven(cpPath, { projectDir: PROJECT, testCommand, log: (s) => emit(s) });
+    if (!r.attested) {
+      emit(`!! attest refused: ${r.reason}`);
+      process.exit(3);
+    }
+    emit(`attested: wave ${r.wave} GO (${r.attestPath})${r.terminal ? ' — project DONE' : ' — run --resume to continue'}`);
+    process.exit(0);
+  } catch (e) {
+    emit(`!! attest failed: ${e.reason || e.message}`);
+    process.exit(3);
+  }
+}
+
 // Clear a halted checkpoint BEFORE runProject (whose planResume refuses 'halted').
 // Only meaningful with --resume; without a checkpoint on disk there is nothing to clear.
 if (RESUME && CLEAR_HALT) {

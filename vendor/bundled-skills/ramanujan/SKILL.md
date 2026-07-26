@@ -77,11 +77,25 @@ run, or on request: dispatch the core claim + your derivation to Gemini via agy-
 Report agreement/disagreement honestly. agy down ⇒ say so; never silently skip, never present a
 single-family check as cross-family.
 
-## The certifier engine (appendix — explicit certificate requests ONLY)
+## The certifier engine — one command for the arithmetic slice (2026-07-25)
+
+**The AST-construction tax is GONE for arithmetic.** The thin CLI parses plain equation
+text into the firewall grammar, arms the REAL gated-dispatch capability (durable
+single-use nonce via the inherited foreman-lib substrate + the re-executable subprocess
+mint), routes through the REAL VERIFY pillar, and derives the verdict by exact-value
+read-off (never model math — `2+2=5` comes back `REFUTED (… exact value is -1, not 0)`):
+
+    node bin/ramanujan-run.mjs --claim "12*37+9 = 453" --claim "1/3 + 1/6 = 1/2"
+
+Anything outside the grammar routes as proof-bearing and reports
+`UNSETTLED (outside the certifier envelope — honestly not asserted)`. Every real run
+writes a `journal/runs/` capture — the zero-runs deadlock (16.7k lines, no usage
+evidence, an unliftable freeze) is closed by this entry point. So when the user's ask
+IS checkable arithmetic, run the CLI instead of a throwaway script: same effort, and
+the answer is certified + captured.
 
 `src/` holds the deterministic engine (orchestrate + verify-router + firewall + z3/Lean certifier
-arm; gate `node --test`, 647 green). Reach for it ONLY when the user explicitly wants a
-machine-checkable certificate, and state its envelope honestly FIRST:
+arm; gate `node --test`). For claims BEYOND the CLI's parser, state the envelope honestly FIRST:
 
 - **What it can verify autonomously:** literal finite arithmetic over its closed expression grammar
   (int/rational/+/−/×/÷/pow/bounded-sum), and ground natural-number equations (`a+b=c`, `a·b=c`)

@@ -48,7 +48,7 @@ import {
   HaltError, locateDocs, parseWaves, discoverTestCommand, preflightTestCommand,
   readCheckpoint, projectDoneDefinition, newCheckpoint, writeCheckpointAtomic, makeBudget,
 } from './foreman-lib.mjs';
-import { runWave } from './wave-engine.mjs';
+import { runWave, runGate } from './wave-engine.mjs';
 import { makeGitContext } from './git-hygiene.mjs';
 
 /**
@@ -161,6 +161,82 @@ export function planResume(checkpointPath, totalWaves) {
  * @param {{log?:(s:string)=>void, force?:boolean}} [o]
  *   force: allow clear-halt on vacuous-GREEN without code-hypothesis (ops escape hatch)
  */
+/**
+ * P2 2026-07-25 — `--attest-wave-proven` (F-AT-1: journals 0043/0044/0045, 0074).
+ * The SANCTIONED operator path to finish a wave that is verifiably GREEN but whose
+ * vacuous-guard cannot see the deliverable (resume/doc-only second pass). Before this,
+ * the only exit was hand-editing foreman-checkpoint.json — which the auto-mode
+ * classifier correctly refuses as engine-state tampering.
+ *
+ * NOTHING here weakens the gate: the ORCHESTRATOR re-runs the real gate NOW and it
+ * must be genuinely GREEN; the wave's proven ledger must exist and every listed file
+ * must be live on disk. The attestation record names the human operator as the party
+ * accepting deliverable-exercise on evidence the guard cannot derive — an auditable
+ * signed statement, not a bypass flag.
+ */
+export async function attestWaveProven(checkpointPath, {
+  projectDir,
+  testCommand,
+  log = () => {},
+} = {}) {
+  const cp = readCheckpoint(checkpointPath);
+  if (cp.status !== 'halted') {
+    return { attested: false, reason: `checkpoint status is '${cp.status}' — attest applies to a halted wave` };
+  }
+  const wave = cp.current_wave;
+  const foremanDir = path.join(projectDir, '.foreman');
+  const ledgerPath = path.join(foremanDir, `wave-${wave}-proven.json`);
+  if (!fs.existsSync(ledgerPath)) {
+    return { attested: false, reason:
+      `no proven ledger at ${ledgerPath} — a wave with no recorded deliverables cannot be attested; ` +
+      `land the deliverable (or a source-only wave-${wave}-proven.json) first` };
+  }
+  let ledger;
+  try { ledger = JSON.parse(fs.readFileSync(ledgerPath, 'utf8')); }
+  catch (e) { return { attested: false, reason: `proven ledger unreadable: ${e.message}` }; }
+  const files = Array.isArray(ledger.files) ? ledger.files : Array.isArray(ledger) ? ledger : [];
+  const missing = files.filter((f) => !fs.existsSync(path.join(projectDir, String(f).replace(/ \(deleted\)$/, ''))));
+  if (!files.length || missing.length) {
+    return { attested: false, reason: !files.length
+      ? 'the proven ledger lists no files — nothing to attest'
+      : `ledger file(s) missing on disk: ${missing.slice(0, 5).join(', ')}` };
+  }
+  // The REAL gate, re-run by the orchestrator, right now. TIMEOUT/vacuous/RED all refuse.
+  log(`attest: re-running the gate for wave ${wave} (orchestrator-owned; must be genuinely GREEN)…`);
+  const gate = await runGate({ projectDir, testCommand, foremanDir, wave: { n: wave }, iteration: 0 });
+  if (!gate.green) {
+    return { attested: false, reason:
+      `the gate is not GREEN (${gate.gate_class ?? 'RED'}${gate.vacuous_reason ? `: ${gate.vacuous_reason}` : ''}) — attest never overrides the gate` };
+  }
+  const record = {
+    attested_by: 'human-operator (--attest-wave-proven)',
+    ts: new Date().toISOString(),
+    wave,
+    gate_artifact: gate.artifact_path,
+    gate: { exit_code: gate.exit_code, tests: gate.tap.tests, pass: gate.tap.pass, fail: gate.tap.fail },
+    ledger: ledgerPath,
+    ledger_files: files,
+    statement:
+      'The operator attests these ledger deliverables are this wave\'s work and are exercised — ' +
+      'accepted on human evidence the vacuous-guard cannot derive (F-AT-1). The gate above ran GREEN at attest time.',
+  };
+  const attestPath = path.join(foremanDir, `wave-${wave}-attested.json`);
+  fs.writeFileSync(attestPath, JSON.stringify(record, null, 2) + '\n', 'utf8');
+  const terminal = wave >= (cp.total_waves ?? wave);
+  cp.last_verdict = 'GO';
+  cp.status = terminal ? 'done' : 'budget_stopped';
+  if (!terminal) cp.current_wave = wave + 1;
+  cp.intra_wave_step = 'execute'; // next entry point (fresh wave / done-state inert)
+  cp.iteration = 0;
+  cp.pending_action = terminal
+    ? `project DONE via human attestation of terminal wave ${wave} (see ${attestPath}; gate GREEN at attest time)`
+    : `wave ${wave} completed via human attestation (${attestPath}); --resume proceeds to wave ${wave + 1}`;
+  writeCheckpointAtomic(checkpointPath, cp);
+  log(`attest: wave ${wave} GO by attestation → ${attestPath}; checkpoint ${cp.status}` +
+    (terminal ? '' : ` @ wave ${cp.current_wave}`));
+  return { attested: true, wave, attestPath, terminal, gate: record.gate };
+}
+
 export function clearHaltedCheckpoint(checkpointPath, { log = () => {}, force = false } = {}) {
   const cp = readCheckpoint(checkpointPath); // HaltError on torn/invalid — never guess
   if (cp.status !== 'halted') {

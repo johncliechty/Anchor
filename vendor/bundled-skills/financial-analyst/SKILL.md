@@ -72,6 +72,34 @@ evaluated graph (or a directly-cited user input). No unverified qualitative
 valuation claims ("attractive multiple", "market-standard terms") unless the user
 supplied the benchmark.
 
+**This is now MACHINE-ENFORCED** (2026-07-25, prose-lock=C): `bin/deal-review.mjs`'s
+deterministic grounding gate extracts every significant number from the report and
+refuses delivery unless each traces to the `evaluate()` node dict or the declared
+inputs — an ungrounded number is a named violation with context, never a vibe.
+
+## The adversarial review engine (`bin/deal-review.mjs`, 2026-07-25)
+
+The review layer this skill previously only CLAIMED. Runs strictly DOWNSTREAM of
+`evaluate()`/`tie_out()` (the calc engine is never touched, never re-derived):
+
+    node bin/deal-review.mjs --report report.md --values nodes.json [--inputs inputs.json] \
+         [--rounds 3] [--live] [--out outdir]
+
+- **Grounding gate first** (deterministic, pre-seat, see above).
+- **3 fresh-context Sharks** with the ≥2-agree BLOCKER tally — imported from
+  `crucible/bin/shark-tank.mjs`, charter = crucible's `investment-memo` pack criteria
+  (c2 is this skill's grounding rule as a rubric line) + FA extensions (fa1 template
+  omissions load-bearing for THIS deal, fa2 assumption sanity, fa3 semantic grounding).
+- **Context-free Judge** (`crucible/bin/judge.mjs`) + convergence-until-dry (cap
+  `--rounds`).
+- **Unforgeable stamps**: `--live` binds prefs-aware cross-family seats via
+  `researchPrime/bin/live-round-agent.mjs`; `cross_model` is DERIVED from the reached-
+  family tracker. No seats ⇒ **honest stop** ("the adversarial review did NOT run") —
+  never a fabricated review. Single-family runs carry the shared-blind-spot note.
+- Verdict: `GO` only when grounded AND shark-dry AND judge-lockable. Output:
+  `DEAL-REVIEW.json` + a `journal/runs/` capture.
+- Gate: `node --test test/` (deal-review suite is hermetic — stub seats, no .py).
+
 ## Extending
 
 A new deal type = a new `templates/<name>.py` exposing `create_<name>_graph(**inputs)`

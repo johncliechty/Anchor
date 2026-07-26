@@ -9,7 +9,7 @@ description: Deep-think advisor — a rigorous, honesty-stamped read on any arti
 
 > Persona tier: TOP (Fable 5). This SKILL.md is the stateless runtime protocol; the deterministic engine +
 > canary harness that VALIDATE a run live beside it (`seam/`, `schema/advisor-output.schema.json`, `test/`,
-> gate = `node --test test/*.test.mjs`). The vetted method this encodes is in `planning/research-advisor/FINDINGS.md`
+> gate = `node --test test/*.test.mjs test/mapreduce/*.test.mjs`). The vetted method this encodes is in `planning/research-advisor/FINDINGS.md`
 > and `planning/crucible-advisor/MASTER-PLAN.md`; the locked objective is `NORTH-STAR.md` (do not drift from it).
 
 > **Tier definition (Heavy vs regular · stakes-gated cross-model · seat mapping) + invocation discipline
@@ -183,7 +183,7 @@ honor-system checklist and B2′/B7′ are stamped BLOCKED-this-cycle.
 - High stakes: RECOMMEND a cross-family second opinion / researchPrime escalation (honest handoff, not in-pipeline pretend).
 
 ## Deterministic harness (PRINCIPLE-D)
-The ground-truth gate is `node --test test/*.test.mjs` over the canary suite (`seam/` engine + `test/`). The
+The ground-truth gate is `node --test test/*.test.mjs test/mapreduce/*.test.mjs` over the canary suite (`seam/` engine + `test/`). The
 elevation oracle and any LLM/cross-family judging are ADVISORY and NEVER in the gate command (an unreachable
 judge leaves the gate GREEN — a meta-isolation test proves it). Improvement happens via the journal + North-Star-
 gated sleep loop (`journal/`, `LESSONS.md`); the canary set = the test suite; a sleep revision cannot drift the

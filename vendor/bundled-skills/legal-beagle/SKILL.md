@@ -16,6 +16,31 @@ conversation, and recommend licensed counsel for anything consequential.
 > discipline:** canonical in `<path> Foundry\AGENTS.md` → "Skill tiers" / "Invocation
 > discipline" / "Run capture". Do not re-define or deliberate any of it at start.
 
+## The adversarial engine (`bin/legal-round.mjs`, 2026-07-25 — the Heavy procedure ENFORCED)
+
+The Heavy procedure below is now CODE, not memory (prose-lock=C amendment):
+
+    node bin/legal-round.mjs --memo memo.md --sources <pack-file-or-dir> \
+         [--rounds 3] [--live] [--out outdir]
+
+- **Hard pre-delivery citation gates** (deterministic, run even with no seats):
+  token-level `lintCitations` AND the NEW proposition-level `lintPropositions` — every
+  citation's paragraph must QUOTE the authority (≥15-char span found verbatim in the
+  pack). The token check alone is fooled by the journal-0001 wrong-reporter class (a
+  real cite string + an ungrounded claim about it); the quote requirement is not.
+  `[UNVERIFIED]` on the line stays the honest exemption. Empty source pack ⇒ fail
+  CLOSED (journal 0006).
+- **3 fresh-context Sharks with the ≥2-agree BLOCKER tally** (crucible shark-tank) on
+  the legal charter: lb1 jurisdiction+date, lb2 quote-then-analyze, lb3 non-precedential
+  flagging (the PLR class), lb4 certainty ceiling (the 0004/0006 overclaim class),
+  lb5 counter-authority. **Context-free Judge** (crucible judge) + convergence-until-dry.
+- **Unforgeable stamps**: `--live` binds cross-family seats via researchPrime's
+  live-round-agent; `cross_model` is DERIVED from the reached-family tracker (the
+  journal-0006 "stamp single-family honestly" rule is now runtime, not discipline).
+  No seats ⇒ GATES-ONLY mode: the deterministic gates run, the review honestly does not.
+- Verdict: `GO` only when citation-grounded AND shark-dry AND judge-lockable. Output:
+  `LEGAL-REVIEW.json` + `journal/runs/` capture. Suite: `node --test test/`.
+
 ## The Heavy procedure (WRITTEN, 2026-07-11 — no longer rediscovered per run)
 
 On any `legal-beagle-Heavy` run (and on request at regular tier when stakes warrant):

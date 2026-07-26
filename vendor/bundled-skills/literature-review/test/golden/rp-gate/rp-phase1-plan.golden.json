@@ -71,7 +71,19 @@
     "planHash": "<PLAN_HASH>",
     "gate2Decision": "APPROVE",
     "lockedGovernorOutput": {
-      "hash": "mock-hash"
+      "roundBudget": 8,
+      "bounds": {},
+      "thresholds": {
+        "N": 3,
+        "K": 4,
+        "M": 2
+      },
+      "provenance": {
+        "inputsHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "contractVersion": 1
+      },
+      "tier": "medium",
+      "hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
     },
     "hostApprovalProvider": "TTY",
     "skill": "researchPrime"
