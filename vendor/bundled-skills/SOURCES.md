@@ -9,13 +9,13 @@ extraction. The archived commit sha below is the honest provenance.
 | researchPrime | <path> | `a79065be9126b1224596f7c8a57612df376578f7` |
 | crucible | <path> | `a79065be9126b1224596f7c8a57612df376578f7` |
 | foreman | <path> | `a79065be9126b1224596f7c8a57612df376578f7` |
-| gandalf | <path> Foundry\skills\gandalf | `3917ba7b058e57b7da9ea42cfcd004b590007b6b` |
-| jumper | <path> Foundry | `3917ba7b058e57b7da9ea42cfcd004b590007b6b` |
-| ramanujan | <path> Foundry | `3917ba7b058e57b7da9ea42cfcd004b590007b6b` |
-| legal-beagle | <path> Foundry | `3917ba7b058e57b7da9ea42cfcd004b590007b6b` |
-| literature-review | <path> Foundry | `3917ba7b058e57b7da9ea42cfcd004b590007b6b` |
-| financial-analyst | <path> Foundry | `3917ba7b058e57b7da9ea42cfcd004b590007b6b` |
-| tidy-idy | <path> Foundry | `3917ba7b058e57b7da9ea42cfcd004b590007b6b` |
-| zombie-hunter | <path> Foundry | `3917ba7b058e57b7da9ea42cfcd004b590007b6b` |
+| gandalf | <path> Foundry\skills\gandalf | `559f5fac7666878aa4732b48d35f318078f81ee2` |
+| jumper | <path> Foundry | `559f5fac7666878aa4732b48d35f318078f81ee2` |
+| ramanujan | <path> Foundry | `559f5fac7666878aa4732b48d35f318078f81ee2` |
+| legal-beagle | <path> Foundry | `559f5fac7666878aa4732b48d35f318078f81ee2` |
+| literature-review | <path> Foundry | `559f5fac7666878aa4732b48d35f318078f81ee2` |
+| financial-analyst | <path> Foundry | `559f5fac7666878aa4732b48d35f318078f81ee2` |
+| tidy-idy | <path> Foundry | `559f5fac7666878aa4732b48d35f318078f81ee2` |
+| zombie-hunter | <path> Foundry | `559f5fac7666878aa4732b48d35f318078f81ee2` |
 | drivers | <path> | `a79065be9126b1224596f7c8a57612df376578f7` |
-| foundry-triage | <path> Foundry | `3917ba7b058e57b7da9ea42cfcd004b590007b6b` |
+| foundry-triage | <path> Foundry | `559f5fac7666878aa4732b48d35f318078f81ee2` |

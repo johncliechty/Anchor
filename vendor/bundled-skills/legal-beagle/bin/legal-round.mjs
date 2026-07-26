@@ -32,8 +32,20 @@ import process from 'node:process';
 
 import { lintCitations, lintPropositions } from '../src/citation-lint.js';
 
-const TRIO = process.env.ANCHOR_TRIO_DIR || '<path>';
+const TRIO = resolveTrioRoot();
 const trioUrl = (rel) => pathToFileURL(path.join(TRIO, rel)).href;
+
+/** Ship-safe trio-root resolution (2026-07-26): (1) ANCHOR_TRIO_DIR env, (2) the
+ *  BUNDLED sibling layout (vendor/bundled-skills/<skill>/bin -> ../../ holds
+ *  crucible/researchPrime/drivers on a collaborator machine), (3) the author-host
+ *  canonical path. Same probe order as the crucible foundry-triage resolver. */
+function resolveTrioRoot() {
+  if (process.env.ANCHOR_TRIO_DIR) return process.env.ANCHOR_TRIO_DIR;
+  const here = path.dirname(fileURLToPath(import.meta.url)); // <skill>/bin
+  const sibling = path.resolve(here, '..', '..');
+  if (fs.existsSync(path.join(sibling, 'crucible', 'bin', 'shark-tank.mjs'))) return sibling;
+  return '<path>';
+}
 
 // ── The legal charter (the review round's North Star) ────────────────────────
 

@@ -9,8 +9,30 @@
 // RAMANUJAN_CERTIFIER_REQUIRES_DEPTH_LOCK — certifier never true; no default-full;
 // tier env alone never unlocks. Honesty-law labels are never thinned by this module.
 
-import { getLockedBand } from 'fil<path>';
-import { resolveRamanujanDepthKnobs } from 'fil<path>';
+// Ship-safe foundry-triage resolution (2026-07-26): the previous absolute author-host
+// file URLs were scrubbed to 'fil<path>' in the collaborator bundle, crashing EVERY
+// vendored import of this module. Probe: (1) ANCHOR_FOUNDRY_DIR/SKILL_FOUNDRY_DIR env,
+// (2) the vendored sibling layout (bundled-skills/foundry/triage), (3) the canonical
+// Skill Foundry layout — then dynamic-import (no literal host path survives to scrub).
+import { existsSync } from 'node:fs';
+import { dirname, join, resolve as resolvePath } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+function resolveTriageRoot() {
+  const env = process.env.ANCHOR_FOUNDRY_DIR || process.env.SKILL_FOUNDRY_DIR;
+  if (env && existsSync(join(env, 'foundry', 'triage', 'mapping.mjs'))) return join(env, 'foundry', 'triage');
+  const here = dirname(fileURLToPath(import.meta.url)); // <skill>/src
+  for (const cand of [
+    resolvePath(here, '..', '..', 'foundry', 'triage'),        // vendor/bundled-skills/foundry/triage (ship layout)
+    resolvePath(here, '..', '..', '..', 'foundry', 'triage'),  // Skill Foundry/foundry/triage (canonical)
+  ]) {
+    if (existsSync(join(cand, 'mapping.mjs'))) return cand;
+  }
+  throw new Error('ramanujan triage-band: foundry/triage not resolvable (set ANCHOR_FOUNDRY_DIR to the Skill Foundry root)');
+}
+const _triage = resolveTriageRoot();
+const { getLockedBand } = await import(pathToFileURL(join(_triage, 'lock.mjs')).href);
+const { resolveRamanujanDepthKnobs } = await import(pathToFileURL(join(_triage, 'mapping.mjs')).href);
 
 /** Named refuse code for unlocked certifier/knob resolve (B4 SC4). */
 export const RAMANUJAN_CERTIFIER_REQUIRES_DEPTH_LOCK = 'RAMANUJAN_CERTIFIER_REQUIRES_DEPTH_LOCK';

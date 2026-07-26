@@ -20,8 +20,8 @@
 //   node bin/ramanujan-run.mjs --input claims.json [--output out.json] [--depth FULL]
 //     claims.json: [{ id?, statement, expr? }] (expr in firewall-grammar AST form)
 
-import { readFileSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync, writeFileSync, mkdirSync, realpathSync, existsSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 
@@ -184,10 +184,29 @@ async function main() {
   // arithmetic class (the Honesty Law keeps proof/conceptual claims unsettled even
   // with the gate open). If the substrate cannot load (stranger machine, missing
   // manifest), the run proceeds UNARMED and says so — claims honestly ABSTAIN.
+  // Ship-safe substrate resolution (2026-07-26): the inherits manifest's relative
+  // foreman-lib path does not resolve in the collaborator bundle (foreman is a
+  // SIBLING there: bundled-skills/foreman). Probe env → sibling → canonical → manifest.
+  async function loadSubstrateShipSafe() {
+    const here = dirname(fileURLToPath(import.meta.url)); // <skill>/bin
+    const cands = [
+      process.env.ANCHOR_TRIO_DIR && join(process.env.ANCHOR_TRIO_DIR, 'foreman', 'bin', 'foreman-lib.mjs'),
+      resolve(here, '..', '..', 'foreman', 'bin', 'foreman-lib.mjs'), // vendored sibling layout
+      '<path>',                      // author-host canonical
+    ].filter(Boolean);
+    for (const c of cands) {
+      if (existsSync(c)) {
+        const ns = await import(pathToFileURL(c).href);
+        if (['newCheckpoint', 'writeCheckpointAtomic', 'readCheckpoint'].every((f) => typeof ns[f] === 'function')) return ns;
+      }
+    }
+    return loadDurabilitySubstrate(); // manifest fallback (canonical dev layout)
+  }
+
   let capability = null;
   let armNote = null;
   try {
-    const substrate = await loadDurabilitySubstrate();
+    const substrate = await loadSubstrateShipSafe();
     const stateDir = mkdtempSync(join(tmpdir(), 'ramanujan-run-'));
     const store = DurableNonceStore.load(substrate, join(stateDir, 'nonce.checkpoint.json'));
     const dispatcher = new AdjudicationDispatcher({ store, family: 'firewall-subprocess' });
